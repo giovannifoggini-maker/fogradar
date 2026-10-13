@@ -198,7 +198,7 @@
       </aside>
     </main>
 
-    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Fonti live: <a href="https://api.adsb.one/" target="_blank" rel="noopener noreferrer">ADSB One</a> · <a href="https://airplanes.live/api-docs/" target="_blank" rel="noopener noreferrer">Airplanes.live</a> · <a href="https://www.adsb.lol/docs/api/" target="_blank" rel="noopener noreferrer">ADSB.lol</a></span></footer>
+    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Fonti live: <a href="https://api.adsb.one/" target="_blank" rel="noopener noreferrer">ADSB One</a> · <a href="https://airplanes.live/api-docs/" target="_blank" rel="noopener noreferrer">Airplanes.live</a> · <a href="https://www.adsb.lol/docs/api/" target="_blank" rel="noopener noreferrer">ADSB.lol</a> · Dati anche da <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">ADSB.fi</a> (uso personale/non commerciale)</span></footer>
   </div>
 
   <script>
@@ -206,7 +206,7 @@
     'use strict';
     const API_ENDPOINT = '/api/aircraft';
     const REFRESH_MS = 60000;
-    const DEFAULT_CENTER = { lat: 45.4642, lon: 9.1900, name: 'Milano · Italia' };
+    const DEFAULT_CENTER = { lat: 45.0703, lon: 7.6869, name: 'Torino · Italia' };
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const $ = (id) => document.getElementById(id);
     const state = {

@@ -14,12 +14,15 @@ START_PORT = 10000
 MAX_PORT = 10100
 ALLOWED_RANGES = {25, 50, 100, 150, 250}
 PROVIDERS = [
-    ("ADSB One", "https://api.adsb.one/v2/point"),
-    ("Airplanes.live", "https://api.airplanes.live/v2/point"),
-    ("ADSB.lol", "https://api.adsb.lol/v2/point"),
+    ("ADSB One", "https://api.adsb.one/v2/point", "point-v2"),
+    ("Airplanes.live", "https://api.airplanes.live/v2/point", "point-v2"),
+    ("ADSB.lol", "https://api.adsb.lol/v2/point", "point-v2"),
+    ("ADSB.fi", "https://opendata.adsb.fi/api/v3/lat", "adsbfi-v3"),
 ]
 PROVIDER_COOLDOWN_UNTIL = {}
 PROVIDER_COOLDOWN_STATUS = {}
+PROVIDER_LAST_REQUEST_AT = {}
+PROVIDER_MIN_INTERVAL_SECONDS = {"ADSB.fi": 1.1}
 
 
 class ApiProblem(Exception):
@@ -28,8 +31,19 @@ class ApiProblem(Exception):
         self.status = status
 
 
-def query_provider(name, base, lat, lon, dist):
-    url = f"{base}/{lat}/{lon}/{dist}"
+def query_provider(name, base, lat, lon, dist, fmt="point-v2"):
+    now = time.time()
+    min_interval = PROVIDER_MIN_INTERVAL_SECONDS.get(name, 0)
+    wait = min_interval - (now - PROVIDER_LAST_REQUEST_AT.get(name, 0))
+    if wait > 0:
+        return None, {"provider": name, "status": 429, "reason": f"limite prudenziale: riprova tra {int(wait + 0.99)} s"}
+    if min_interval:
+        PROVIDER_LAST_REQUEST_AT[name] = now
+    if fmt == "adsbfi-v3":
+        # ADSB.fi v3 uses /lat/{lat}/lon/{lon}/dist/{dist}.
+        url = f"{base}/{lat}/lon/{lon}/dist/{dist}"
+    else:
+        url = f"{base}/{lat}/{lon}/{dist}"
     request = Request(url, headers={"Accept": "application/json"})
     try:
         with urlopen(request, timeout=10) as response:
@@ -47,6 +61,8 @@ def query_provider(name, base, lat, lon, dist):
     try:
         data = json.loads(raw)
     except ValueError:
+        PROVIDER_COOLDOWN_UNTIL[name] = time.time() + 300
+        PROVIDER_COOLDOWN_STATUS[name] = status or 502
         return None, {"provider": name, "status": status, "reason": f"risposta non JSON ({content_type})"}
     if status < 200 or status >= 300:
         return None, {"provider": name, "status": status, "reason": f"HTTP {status}"}
@@ -55,6 +71,8 @@ def query_provider(name, base, lat, lon, dist):
         aircraft = data.get("aircraft")
     if not isinstance(aircraft, list):
         fields = ", ".join(list(data.keys())[:8]) if isinstance(data, dict) else "formato sconosciuto"
+        PROVIDER_COOLDOWN_UNTIL[name] = time.time() + 300
+        PROVIDER_COOLDOWN_STATUS[name] = status or 502
         return None, {"provider": name, "status": status, "reason": f"JSON senza elenco aeromobili ({fields})"}
     PROVIDER_COOLDOWN_UNTIL.pop(name, None)
     PROVIDER_COOLDOWN_STATUS.pop(name, None)
@@ -63,12 +81,12 @@ def query_provider(name, base, lat, lon, dist):
 
 def get_aircraft(lat, lon, dist):
     failures = []
-    for name, base in PROVIDERS:
+    for name, base, fmt in PROVIDERS:
         cooldown_until = PROVIDER_COOLDOWN_UNTIL.get(name, 0)
         if cooldown_until > time.time():
             failures.append({"provider": name, "status": PROVIDER_COOLDOWN_STATUS.get(name, 503), "reason": f"pausa automatica dopo un errore precedente; riprova tra circa {int((cooldown_until - time.time() + 59) // 60)} min"})
             continue
-        data, failure = query_provider(name, base, lat, lon, dist)
+        data, failure = query_provider(name, base, lat, lon, dist, fmt)
         if data is not None:
             data["providersTried"] = [item["provider"] for item in failures]
             data["note"] = "Dati ADS-B pubblici; copertura e disponibilità dipendono dal provider."
@@ -86,7 +104,7 @@ class QuietHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path in ("/api/health", "/api/health/"):
-            self.send_json(200, {"ok": True, "service": "SKYTRACE local proxy", "mode": "local", "provider": "public ADS-B fallback", "providers": [p[0] for p in PROVIDERS], "credentialsRequired": False})
+            self.send_json(200, {"ok": True, "service": "SKYTRACE local proxy", "mode": "local", "provider": "public ADS-B fallback", "providers": [p[0] for p in PROVIDERS], "attribution": "ADSB.fi data must be credited and linked when used; personal, non-commercial use only.", "credentialsRequired": False})
             return
         if parsed.path in ("/api/aircraft", "/api/aircraft/"):
             self.handle_aircraft(parsed.query)
@@ -145,7 +163,8 @@ if __name__ == "__main__":
     print("=" * 56)
     print(" SKYTRACE — Radar Aereo")
     print(f" Server locale: {url}")
-    print(" Fonti: ADSB One -> Airplanes.live -> ADSB.lol")
+    print(" Fonti: ADSB One -> Airplanes.live -> ADSB.lol -> ADSB.fi")
+    print(" ADSB.fi: uso personale/non commerciale e attribuzione richiesti.")
     print(" Per arrestarlo premi CTRL+C in questa finestra.")
     print("=" * 56)
     threading.Timer(0.8, lambda: webbrowser.open(url)).start()

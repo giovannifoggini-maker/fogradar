@@ -1,10 +1,11 @@
 SKYTRACE — RADAR AEREO (fonti ADS-B pubbliche)
 ================================================
 
-Questa versione resta sulle tre fonti pubbliche originali, in sequenza:
+Questa versione usa quattro fonti ADS-B pubbliche in sequenza:
 1. ADSB One
 2. Airplanes.live
 3. ADSB.lol
+4. ADSB.fi (endpoint v3 documentato)
 
 Non servono credenziali o chiavi API per configurare l'app. La disponibilità
 non è garantita: i provider possono limitare richieste (403/429), soprattutto
@@ -18,7 +19,10 @@ Non inventa posizioni o dati degli aeromobili.
 - Installa Python 3, se necessario: https://www.python.org/downloads/
 - Fai doppio clic su AVVIA_LOCALHOST.bat.
 - Il server prova porte da 10000 a 10100 e apre il browser sulla prima libera.
-- Il proxy tenta ADSB One, poi Airplanes.live, poi ADSB.lol.
+- Il proxy tenta ADSB One, poi Airplanes.live, ADSB.lol e infine ADSB.fi.
+- Il proxy locale fa le richieste dalla tua connessione; Cloudflare le fa dalla propria infrastruttura.
+  Se il provider blocca gli IP cloud con 403/429, nessuna modifica del front-end può garantire
+  gli stessi risultati: il radar segnala l'indisponibilità e riprova rispettando le pause.
 - Per fermare il server premi CTRL+C nella finestra del terminale.
 
 2. PUBBLICAZIONE SU GITHUB + CLOUDFLARE PAGES
@@ -41,9 +45,10 @@ Salva le modifiche su GitHub e attendi che Cloudflare termini il nuovo deploymen
 
 3. VERIFICA
 - Apri https://TUO-PROGETTO.pages.dev/api/health
-- Deve rispondere JSON con "ok": true e l'elenco dei tre provider.
+- Deve rispondere JSON con "ok": true e l'elenco dei quattro provider.
 - Apri https://TUO-PROGETTO.pages.dev/api/aircraft?lat=45.4642&lon=9.19&dist=50
 - Se una fonte risponde correttamente, la risposta conterrà il campo "ac".
+- Il Worker identifica l'app tramite User-Agent/Referer e usa una cache breve per limitare richieste duplicate.
 - Poi apri la home del radar.
 
 NOTE IMPORTANTI
@@ -55,5 +60,9 @@ NOTE IMPORTANTI
 - Il proxy passa alla fonte successiva quando la precedente fallisce. Se tutte
   restituiscono 403/429, non è un problema del disegno radar: l'accesso alle API
   è rifiutato o limitato dall'infrastruttura/provider. Attendi e riprova più tardi.
+- ADSB.fi richiede attribuzione con link a https://adsb.fi/ ed è per uso personale,
+  non commerciale. I suoi endpoint pubblici sono limitati a 1 richiesta al secondo;
+  questa app controlla i voli con intervalli più lunghi. Termini ufficiali:
+  https://github.com/adsbfi/opendata/blob/main/README.md
 - I dati possono avere ritardi, copertura incompleta o campi mancanti.
 - Questa app è solo informativa e non va usata per navigazione o decisioni di sicurezza.
