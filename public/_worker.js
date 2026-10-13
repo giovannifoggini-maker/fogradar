@@ -67,12 +67,11 @@ async function queryProvider(provider, lat, lon, dist, appOrigin) {
   try {
     response = await fetch(url, {
       method: "GET",
-      // Identify the app clearly instead of relying on a generic Worker user-agent.
-      // The referrer identifies the published site; it does not change provider permissions.
+      // Keep outbound headers minimal, matching the local proxy's explicit headers.
+      // Custom User-Agent and Referer were not sent by localhost and can trigger
+      // provider-specific filters. The provider still sees the Cloudflare egress IP.
       headers: {
         "accept": "application/json",
-        "user-agent": `SKYTRACE-Radar/1.0 (+${appOrigin})`,
-        "referer": `${appOrigin}/`,
       },
       signal: AbortSignal.timeout(10000),
     });
@@ -161,7 +160,7 @@ async function cachedAircraftResponse(url) {
   const cache = globalThis.caches?.default;
   if (!cache) return aircraftResponse(url, url.origin);
 
-  const keyUrl = new URL("/__skytrace_cache/aircraft", url.origin);
+  const keyUrl = new URL("/__skytrace_cache/v3/aircraft", url.origin);
   keyUrl.searchParams.set("lat", String(params.lat));
   keyUrl.searchParams.set("lon", String(params.lon));
   keyUrl.searchParams.set("dist", String(params.dist));
@@ -213,6 +212,8 @@ export default {
         provider: "public ADS-B fallback",
         providers: PROVIDERS.map(provider => provider.name),
         attribution: "ADSB.fi data must be credited and linked when used; public endpoint is for personal, non-commercial use.",
+        requestHeaders: "Accept only; no custom User-Agent or Referer",
+        cacheVersion: 3,
         credentialsRequired: false,
       });
     }

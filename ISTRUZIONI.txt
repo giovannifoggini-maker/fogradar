@@ -66,3 +66,10 @@ NOTE IMPORTANTI
   https://github.com/adsbfi/opendata/blob/main/README.md
 - I dati possono avere ritardi, copertura incompleta o campi mancanti.
 - Questa app è solo informativa e non va usata per navigazione o decisioni di sicurezza.
+
+
+DIAGNOSTICA CLOUDFARE (versione aggiornata)
+- Il Worker invia solo Accept: application/json, come il proxy locale per gli header espliciti; rimuove User-Agent e Referer personalizzati.
+- La cache API è stata versionata per non riutilizzare immediatamente risposte d'errore precedenti.
+- Dopo il deploy, apri https://TUO-PROGETTO.pages.dev/api/health e verifica requestHeaders = "Accept only; no custom User-Agent or Referer" e cacheVersion = 3.
+- Testa poi https://TUO-PROGETTO.pages.dev/api/aircraft?lat=45.0703&lon=7.6869&dist=50. Se ricevi JSON con il campo ac, l'API funziona; se torna ancora 403/429, il provider sta bloccando o limitando le richieste provenienti dall'infrastruttura cloud. In quel caso una modifica HTML/Worker non può garantire di replicare le richieste uscenti dal tuo PC: servirà un provider che autorizzi quelle richieste oppure un backend eseguito su un host consentito.
