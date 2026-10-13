@@ -1,43 +1,59 @@
-SKYTRACE — RADAR AEREO
-======================
+SKYTRACE — RADAR AEREO (fonti ADS-B pubbliche)
+================================================
 
-CONTENUTO
-- public/index.html    Interfaccia radar circolare (HTML, CSS, JavaScript)
-- public/_worker.js    Cloudflare Pages Advanced Mode: asset statici + proxy ADS-B
-- AVVIA_LOCALHOST.bat Avvio rapido per Windows
-- avvia_localhost.py  Server locale e proxy ADS-B
-- ISTRUZIONI.txt       Questa guida
+Questa versione resta sulle tre fonti pubbliche originali, in sequenza:
+1. ADSB One
+2. Airplanes.live
+3. ADSB.lol
 
-TEST LOCALE (WINDOWS)
-1. Estrai tutto lo ZIP mantenendo la cartella public e i file nella stessa cartella.
-2. Installa Python 3 se non è già installato: https://www.python.org/downloads/
-3. Fai doppio clic su AVVIA_LOCALHOST.bat.
-4. Si apre il browser su http://127.0.0.1:10000 (o sulla prima porta libera successiva).
-5. Per verificare il proxy, apri /api/health sul medesimo indirizzo. Deve apparire JSON con "ok": true.
-6. Il proxy prova tre fonti live in sequenza: ADSB One, Airplanes.live e ADSB.lol. Se una risponde 403, con HTML o non JSON, prova la successiva.
-7. Per arrestare il server premi Ctrl+C nella finestra del terminale.
+Non servono credenziali o chiavi API per configurare l'app. La disponibilità
+non è garantita: i provider possono limitare richieste (403/429), soprattutto
+da alcuni server cloud. In tal caso il radar non interrompe la pagina: conserva gli ultimi dati ricevuti
+per la stessa area (marcandoli come NON LIVE) e usa tentativi progressivamente
+più distanziati. Se non è mai arrivato un dato reale, mostra uno stato informativo.
+Non inventa posizioni o dati degli aeromobili.
 
-PUBBLICAZIONE SU GITHUB + CLOUDFLARE PAGES
-1. Carica/sostituisci i contenuti di questo ZIP alla radice del repository GitHub, non dentro un'altra cartella.
-2. Verifica che public/index.html e public/_worker.js siano entrambi presenti su GitHub.
-3. Se esiste la vecchia cartella functions/api/aircraft.js, rimuovila per evitare confusione: il proxy usa Pages Advanced Mode tramite public/_worker.js.
-4. In Cloudflare Pages: Root directory vuoto, Framework preset None, Build command exit 0 (oppure vuoto), Build output directory public, production branch main.
-5. Avvia un nuovo deployment e attendi Success.
-6. Test diagnostico: apri https://TUO-PROGETTO.pages.dev/api/health. Deve rispondere JSON con "ok": true e l'elenco dei provider.
-7. Poi apri la home e premi Aggiorna.
+1. TEST LOCALE (WINDOWS)
+- Estrai tutto lo ZIP mantenendo la struttura delle cartelle.
+- Installa Python 3, se necessario: https://www.python.org/downloads/
+- Fai doppio clic su AVVIA_LOCALHOST.bat.
+- Il server prova porte da 10000 a 10100 e apre il browser sulla prima libera.
+- Il proxy tenta ADSB One, poi Airplanes.live, poi ADSB.lol.
+- Per fermare il server premi CTRL+C nella finestra del terminale.
 
-FONTI DATI
-- ADSB One: https://api.adsb.one/ — endpoint documentato: /v2/point/{lat}/{lon}/{radius}
-- Airplanes.live: https://airplanes.live/api-docs/ — endpoint documentato: /v2/point/{lat}/{lon}/{radius}
-- ADSB.lol: https://www.adsb.lol/ — endpoint v2 per latitudine/longitudine/raggio.
+2. PUBBLICAZIONE SU GITHUB + CLOUDFLARE PAGES
+Carica alla radice del repository questi contenuti, mantenendo le cartelle:
+  public/index.html
+  public/_worker.js
+  AVVIA_LOCALHOST.bat
+  avvia_localhost.py
+  ISTRUZIONI.txt
+  .gitignore
 
-Il proxy prova le fonti una dopo l'altra se riceve HTTP non riuscito, HTML invece di JSON, JSON malformato o errore di connessione. La disponibilità, copertura, policy anti-abuso e limiti possono variare per ciascun servizio. L'app non inventa posizioni quando i dati live non sono disponibili.
+In Cloudflare Pages configura:
+- Root directory: vuoto
+- Framework preset: None
+- Build command: exit 0 (oppure vuoto)
+- Build output directory: public
+- Production branch: main
 
-AGGIORNAMENTO
-- Intervallo di aggiornamento della mappa: 20 secondi.
-- Coordinate iniziali: Milano. È possibile scegliere geolocalizzazione (su localhost/HTTPS) o coordinate manuali.
-- Raggi disponibili: 25, 50, 100, 150 e 250 miglia nautiche.
-- Questa app è solo informativa: non usarla per navigazione o decisioni di sicurezza.
+Salva le modifiche su GitHub e attendi che Cloudflare termini il nuovo deployment.
 
-LICENZE E ATTRIBUZIONE
-Consultare i termini e le licenze dei provider utilizzati. Dati di comunità ADS-B possono essere distribuiti sotto ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/ .
+3. VERIFICA
+- Apri https://TUO-PROGETTO.pages.dev/api/health
+- Deve rispondere JSON con "ok": true e l'elenco dei tre provider.
+- Apri https://TUO-PROGETTO.pages.dev/api/aircraft?lat=45.4642&lon=9.19&dist=50
+- Se una fonte risponde correttamente, la risposta conterrà il campo "ac".
+- Poi apri la home del radar.
+
+NOTE IMPORTANTI
+- Il radar verifica i dati ogni 60 secondi, ma dopo errori applica un'attesa progressiva
+  fino a 10 minuti. Anche il proxy mette in pausa temporanea le fonti dopo 403/429.
+- Gli ultimi dati riusciti vengono conservati nel browser per 24 ore e, durante un
+  disservizio, sono marcati chiaramente come NON LIVE. Se non esiste una lettura
+  precedente, la pagina mostra uno stato informativo e non inventa aerei.
+- Il proxy passa alla fonte successiva quando la precedente fallisce. Se tutte
+  restituiscono 403/429, non è un problema del disegno radar: l'accesso alle API
+  è rifiutato o limitato dall'infrastruttura/provider. Attendi e riprova più tardi.
+- I dati possono avere ritardi, copertura incompleta o campi mancanti.
+- Questa app è solo informativa e non va usata per navigazione o decisioni di sicurezza.

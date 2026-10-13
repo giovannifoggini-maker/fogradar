@@ -127,7 +127,7 @@
         <div class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="1.4"/><path d="M16 4v24M4 16h24M7.5 7.5l17 17M24.5 7.5l-17 17" stroke="currentColor" stroke-width=".8" opacity=".6"/><path d="M16 8l3.5 9-3.5-2-3.5 2 3.5-9Z" fill="currentColor"/></svg>
         </div>
-        <div><h1>SKYTRACE</h1><p>AIRSPACE SURVEILLANCE / ADS-B</p></div>
+        <div><h1>SKYTRACE</h1><p>AIRSPACE SURVEILLANCE / PUBLIC ADS-B</p></div>
       </div>
       <div class="top-actions">
         <div id="livePill" class="live-pill"><span class="dot"></span><span id="liveText">CONNESSIONE API</span></div>
@@ -198,14 +198,14 @@
       </aside>
     </main>
 
-    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Fonti live: <a href="https://github.com/airplanes-live/api-archive" target="_blank" rel="noopener noreferrer">ADSB One</a> · <a href="https://airplanes.live/api-docs/" target="_blank" rel="noopener noreferrer">Airplanes.live</a> · <a href="https://www.adsb.lol/" target="_blank" rel="noopener noreferrer">ADSB.lol</a> · <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">Licenza dati ODbL</a></span></footer>
+    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Fonti live: <a href="https://api.adsb.one/" target="_blank" rel="noopener noreferrer">ADSB One</a> · <a href="https://airplanes.live/api-docs/" target="_blank" rel="noopener noreferrer">Airplanes.live</a> · <a href="https://www.adsb.lol/docs/api/" target="_blank" rel="noopener noreferrer">ADSB.lol</a></span></footer>
   </div>
 
   <script>
   (() => {
     'use strict';
     const API_ENDPOINT = '/api/aircraft';
-    const REFRESH_MS = 20000;
+    const REFRESH_MS = 60000;
     const DEFAULT_CENTER = { lat: 45.4642, lon: 9.1900, name: 'Milano · Italia' };
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const $ = (id) => document.getElementById(id);
@@ -217,6 +217,11 @@
       lastUpdated: null,
       loading: false,
       lastError: null,
+      dataStale: false,
+      currentDataKey: null,
+      consecutiveFailures: 0,
+      nextRetryAt: 0,
+      retryDelayMs: 120000,
       timer: null,
       controller: null
     };
@@ -266,7 +271,7 @@
       el.textContent = message;
       const pill = $('livePill');
       pill.classList.toggle('error', type === 'error');
-      $('liveText').textContent = type === 'error' ? 'FEED NON DISPONIBILE' : state.loading ? 'AGGIORNAMENTO' : state.lastUpdated ? 'LIVE ADS-B' : 'CONNESSIONE API';
+      $('liveText').textContent = state.loading ? 'AGGIORNAMENTO' : state.dataStale ? 'DATI SALVATI · NON LIVE' : state.lastUpdated ? 'LIVE ADS-B' : 'IN ATTESA DI DATI';
     }
     function updateCenterLabels() {
       $('centerHeader').textContent = state.center.name.toLocaleUpperCase('it-IT');
@@ -280,19 +285,84 @@
     }
     function updateTimeLabel() {
       if (!state.lastUpdated) { $('updatedText').textContent = 'IN ATTESA DI DATI…'; return; }
-      $('updatedText').textContent = `ULTIMO AGGIORNAMENTO ${state.lastUpdated.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      $('updatedText').textContent = `${state.dataStale ? 'ULTIMO DATO SALVATO' : 'ULTIMO AGGIORNAMENTO'} ${state.lastUpdated.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}${state.dataStale ? ' · NON LIVE' : ''}`;
+    }
+
+    function cacheKeyForCurrentSearch() {
+      return `skytrace-cache-v2:${state.center.lat.toFixed(4)}:${state.center.lon.toFixed(4)}:${state.range}`;
+    }
+
+    function restoreCachedData(key) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return false;
+        const saved = JSON.parse(raw);
+        const savedAt = Number(saved && saved.savedAt);
+        if (!saved || !Array.isArray(saved.aircraft) || !Number.isFinite(savedAt)) return false;
+        // Non mostrare dati indefinitamente: la cache locale ha una validità massima di 24 ore.
+        if (Date.now() - savedAt > 24 * 60 * 60 * 1000) {
+          localStorage.removeItem(key);
+          return false;
+        }
+        state.aircraft = saved.aircraft;
+        state.lastUpdated = new Date(savedAt);
+        state.dataStale = true;
+        state.currentDataKey = key;
+        state.selectedHex = state.aircraft.some(a => String(a.hex) === String(state.selectedHex))
+          ? state.selectedHex
+          : (state.aircraft.length ? String(state.aircraft[0].hex) : null);
+        renderAll();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function saveCachedData(key) {
+      try {
+        localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), aircraft: state.aircraft.slice(0, 1200) }));
+      } catch (_) {
+        // Lo spazio locale può essere esaurito o disabilitato: il radar continua a funzionare senza cache.
+      }
+    }
+
+    function friendlyUnavailableMessage() {
+      if (state.aircraft.length && state.lastUpdated) {
+        const time = state.lastUpdated.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        return `Connessione live momentaneamente non disponibile. Mostro gli ultimi dati ricevuti alle ${time}: non sono in tempo reale. Riproveremo automaticamente.`;
+      }
+      return 'Le fonti di volo sono momentaneamente non raggiungibili. Il radar continuerà a riprovare automaticamente; finché non arrivano dati reali, non verranno mostrati bersagli simulati.';
     }
 
     async function fetchAircraft() {
       if (state.loading) return;
+      const queryKey = cacheKeyForCurrentSearch();
+      if (state.currentDataKey !== queryKey) {
+        if (!restoreCachedData(queryKey)) {
+          state.aircraft = [];
+          state.lastUpdated = null;
+          state.dataStale = false;
+          state.selectedHex = null;
+          state.currentDataKey = queryKey;
+          renderAll();
+        }
+      }
+      if (Date.now() < state.nextRetryAt) {
+        const seconds = Math.max(1, Math.ceil((state.nextRetryAt - Date.now()) / 1000));
+        setStatus(`${friendlyUnavailableMessage()} Prossimo tentativo automatico tra circa ${Math.ceil(seconds / 60)} min.`, 'info');
+        $('liveText').textContent = state.dataStale ? 'DATI SALVATI · NON LIVE' : 'IN ATTESA DI DATI';
+        return;
+      }
+
       state.loading = true;
       $('refreshBtn').disabled = true;
       $('livePill').classList.remove('error');
       $('liveText').textContent = 'AGGIORNAMENTO';
-      setStatus('Richiesta dei dati reali ADS-B in corso…');
+      setStatus(state.dataStale ? 'Tentativo di aggiornamento: nel frattempo manteniamo visibili gli ultimi dati salvati…' : 'Richiesta dei dati reali ADS-B in corso…');
       if (state.controller) state.controller.abort();
       state.controller = new AbortController();
       const url = `${API_ENDPOINT}?lat=${encodeURIComponent(state.center.lat)}&lon=${encodeURIComponent(state.center.lon)}&dist=${encodeURIComponent(state.range)}`;
+      let succeeded = false;
       try {
         const response = await fetch(url, { method: 'GET', cache: 'no-store', signal: state.controller.signal, headers: { 'Accept': 'application/json' } });
         const contentType = response.headers.get('content-type') || '';
@@ -301,24 +371,15 @@
         try { data = JSON.parse(responseText); } catch (_) { /* diagnosed below */ }
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
           if (/<!doctype\s+html|<html[\s>]/i.test(responseText)) {
-            throw new Error('Il server ha restituito una pagina HTML invece dei dati JSON. La rotta /api/aircraft non sta raggiungendo il proxy. Aggiorna public/_worker.js su GitHub e attendi il nuovo deployment.');
+            throw new Error('Il proxy non ha restituito JSON. Controlla il deployment Cloudflare e la rotta /api/aircraft.');
           }
-          throw new Error(`Risposta API non JSON (HTTP ${response.status}, ${contentType || 'tipo contenuto sconosciuto'}). Riprova tra qualche secondo.`);
+          throw new Error(`Risposta API non JSON (HTTP ${response.status}, ${contentType || 'tipo contenuto sconosciuto'}).`);
         }
-        if (!response.ok) {
-          if (response.status === 429) throw new Error(data.detail || 'La fonte ADS-B ha temporaneamente limitato le richieste. Attendi un po’ e riprova.');
-          throw new Error(data.detail || `Il proxy ADS-B ha risposto con HTTP ${response.status}.`);
-        }
-        // ADSB.lol's v2 endpoints use the ADSBExchange-compatible `ac` key;
-        // some alternate endpoints/proxies expose the same list as `aircraft`.
-        const aircraftRows = data && Array.isArray(data.ac)
-          ? data.ac
-          : data && Array.isArray(data.aircraft)
-            ? data.aircraft
-            : null;
+        if (!response.ok) throw new Error(data.detail || `Il proxy ADS-B ha risposto con HTTP ${response.status}.`);
+        const aircraftRows = Array.isArray(data.ac) ? data.ac : Array.isArray(data.aircraft) ? data.aircraft : null;
         if (!aircraftRows) {
-          const fields = data && typeof data === 'object' ? Object.keys(data).join(', ') : typeof data;
-          throw new Error(`Formato API non riconosciuto${fields ? ` (campi ricevuti: ${fields})` : ''}. Riprova tra qualche secondo.`);
+          const fields = Object.keys(data).join(', ');
+          throw new Error(`Formato API non riconosciuto${fields ? ` (campi ricevuti: ${fields})` : ''}.`);
         }
         const now = Date.now();
         state.aircraft = aircraftRows
@@ -331,22 +392,37 @@
           .sort((a, b) => a.distanceNm - b.distanceNm);
         state.lastUpdated = new Date(now);
         state.lastError = null;
+        state.dataStale = false;
+        state.currentDataKey = queryKey;
+        state.consecutiveFailures = 0;
+        state.nextRetryAt = 0;
+        state.retryDelayMs = 120000;
+        succeeded = true;
         if (!state.aircraft.some(a => String(a.hex) === String(state.selectedHex))) state.selectedHex = state.aircraft.length ? String(state.aircraft[0].hex) : null;
+        saveCachedData(queryKey);
         updateCenterLabels();
         renderAll();
         const sourceLabel = data.skytraceSource ? ` Fonte: ${data.skytraceSource}.` : '';
         setStatus(state.aircraft.length ? `Feed aggiornato: ${state.aircraft.length} velivoli con posizione recente entro ${state.range} NM.${sourceLabel}` : `Nessun velivolo con posizione recente trovato entro ${state.range} NM.${sourceLabel} Puoi aumentare il raggio o cambiare centro.`, state.aircraft.length ? 'good' : 'info');
       } catch (err) {
         if (err && err.name === 'AbortError') return;
+        // I dettagli rimangono nella console per la diagnosi, senza allarmare l'interfaccia ad ogni 403/429.
         state.lastError = err instanceof Error ? err.message : 'Errore imprevisto durante il caricamento dei dati.';
-        setStatus(`${state.lastError} Verifica la connessione oppure riprova tra qualche secondo.`, 'error');
-        $('liveText').textContent = 'FEED NON DISPONIBILE';
-        $('aircraftCount').textContent = '—';
-        $('updatedText').textContent = 'DATI NON AGGIORNATI';
+        console.warn('[SKYTRACE] aggiornamento live fallito:', state.lastError);
+        state.consecutiveFailures += 1;
+        state.nextRetryAt = Date.now() + state.retryDelayMs;
+        state.retryDelayMs = Math.min(state.retryDelayMs * 2, 10 * 60 * 1000);
+        state.dataStale = Boolean(state.lastUpdated || state.aircraft.length);
+        $('aircraftCount').textContent = state.aircraft.length.toLocaleString('it-IT');
+        updateTimeLabel();
+        setStatus(friendlyUnavailableMessage(), 'info');
+        $('liveText').textContent = state.dataStale ? 'DATI SALVATI · NON LIVE' : 'IN ATTESA DI DATI';
       } finally {
         state.loading = false;
         $('refreshBtn').disabled = false;
-        if (!state.lastError) $('liveText').textContent = 'LIVE ADS-B';
+        if (succeeded) $('liveText').textContent = 'LIVE ADS-B';
+        else if (state.dataStale) $('liveText').textContent = 'DATI SALVATI · NON LIVE';
+        else $('liveText').textContent = 'IN ATTESA DI DATI';
       }
     }
 
@@ -393,7 +469,7 @@
         return;
       }
       $('selectedCallsign').textContent = displayCallsign(a);
-      $('selectedSub').textContent = `${escText(a.hex, 'ICAO N/D').toUpperCase()} · ${escText(a.category, 'CATEGORIA N/D').toUpperCase()}`;
+      $('selectedSub').textContent = `${escText(a.hex, 'ICAO N/D').toUpperCase()} · ${escText(a.origin_country, 'PAESE N/D').toUpperCase()}`;
       $('detailAltitude').textContent = formatAltitude(a);
       $('detailSpeed').textContent = formatSpeed(a.gs);
       $('detailTrack').textContent = formatTrack(a.track);
