@@ -198,7 +198,7 @@
       </aside>
     </main>
 
-    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Dati: <a href="https://www.adsb.lol/" target="_blank" rel="noopener noreferrer">ADSB.lol</a> · Licenza dati <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL 1.0</a></span></footer>
+    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Fonti live: <a href="https://github.com/airplanes-live/api-archive" target="_blank" rel="noopener noreferrer">ADSB One</a> · <a href="https://airplanes.live/api-docs/" target="_blank" rel="noopener noreferrer">Airplanes.live</a> · <a href="https://www.adsb.lol/" target="_blank" rel="noopener noreferrer">ADSB.lol</a> · <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">Licenza dati ODbL</a></span></footer>
   </div>
 
   <script>
@@ -334,7 +334,8 @@
         if (!state.aircraft.some(a => String(a.hex) === String(state.selectedHex))) state.selectedHex = state.aircraft.length ? String(state.aircraft[0].hex) : null;
         updateCenterLabels();
         renderAll();
-        setStatus(state.aircraft.length ? `Feed aggiornato: ${state.aircraft.length} velivoli con posizione recente entro ${state.range} NM.` : `Nessun velivolo con posizione recente trovato entro ${state.range} NM. Puoi aumentare il raggio o cambiare centro.`, state.aircraft.length ? 'good' : 'info');
+        const sourceLabel = data.skytraceSource ? ` Fonte: ${data.skytraceSource}.` : '';
+        setStatus(state.aircraft.length ? `Feed aggiornato: ${state.aircraft.length} velivoli con posizione recente entro ${state.range} NM.${sourceLabel}` : `Nessun velivolo con posizione recente trovato entro ${state.range} NM.${sourceLabel} Puoi aumentare il raggio o cambiare centro.`, state.aircraft.length ? 'good' : 'info');
       } catch (err) {
         if (err && err.name === 'AbortError') return;
         state.lastError = err instanceof Error ? err.message : 'Errore imprevisto durante il caricamento dei dati.';

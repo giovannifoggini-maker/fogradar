@@ -14,6 +14,15 @@ START_PORT = 10000
 MAX_PORT = 10100
 ALLOWED_RANGES = {25, 50, 100, 150, 250}
 
+
+def data_sources(lat, lon, dist):
+    return [
+        ("ADSB One", f"https://api.adsb.one/v2/point/{lat}/{lon}/{dist}"),
+        ("Airplanes.live", f"https://api.airplanes.live/v2/point/{lat}/{lon}/{dist}"),
+        ("ADSB.lol", f"https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{dist}"),
+    ]
+
+
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         print("[HTTP] " + (format % args))
@@ -21,7 +30,12 @@ class QuietHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path in ("/api/health", "/api/health/"):
-            self.send_json(200, {"ok": True, "service": "SKYTRACE local proxy", "mode": "local"})
+            self.send_json(200, {
+                "ok": True,
+                "service": "SKYTRACE local proxy",
+                "mode": "local",
+                "providers": ["ADSB One", "Airplanes.live", "ADSB.lol"],
+            })
             return
         if parsed.path in ("/api/aircraft", "/api/aircraft/"):
             self.handle_aircraft(parsed.query)
@@ -29,7 +43,7 @@ class QuietHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def send_json(self, status, body):
-        content = json.dumps(body).encode("utf-8")
+        content = json.dumps(body, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store, max-age=0")
@@ -50,36 +64,50 @@ class QuietHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"detail": "Coordinate o raggio non validi."})
             return
 
-        upstream = f"https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{dist}"
-        req = Request(upstream, headers={"Accept": "application/json", "User-Agent": "SkytraceRadar/1.0"})
-        try:
-            with urlopen(req, timeout=14) as response:
-                raw = response.read().decode("utf-8", "replace")
-                status = response.status
-                content_type = response.headers.get("Content-Type", "application/json; charset=utf-8")
-        except HTTPError as error:
-            raw = error.read().decode("utf-8", "replace")
-            status = error.code
-            content_type = error.headers.get("Content-Type", "application/json; charset=utf-8")
-        except (URLError, TimeoutError, OSError):
-            self.send_json(502, {"detail": "La fonte ADS-B non è raggiungibile in questo momento."})
+        failures = []
+        for source_name, upstream_url in data_sources(lat, lon, dist):
+            req = Request(upstream_url, headers={
+                "Accept": "application/json",
+                "User-Agent": "SKYTRACE-Radar/1.1 (public aircraft visualization)",
+            })
+            try:
+                with urlopen(req, timeout=6) as response:
+                    raw = response.read().decode("utf-8", "replace")
+                    status = response.status
+                    content_type = response.headers.get("Content-Type", "application/json")
+            except HTTPError as error:
+                raw = error.read(500).decode("utf-8", "replace")
+                status = error.code
+                content_type = error.headers.get("Content-Type", "tipo sconosciuto")
+            except (URLError, TimeoutError, OSError):
+                failures.append(f"{source_name}: connessione non riuscita")
+                continue
+
+            try:
+                payload = json.loads(raw)
+            except (ValueError, TypeError):
+                failures.append(f"{source_name}: HTTP {status}, risposta non JSON ({content_type})")
+                continue
+            if status < 200 or status >= 300:
+                detail = payload.get("detail", payload.get("message", "")) if isinstance(payload, dict) else ""
+                suffix = f" — {str(detail)[:100]}" if detail else ""
+                failures.append(f"{source_name}: HTTP {status}{suffix}")
+                continue
+            if not isinstance(payload, dict) or not isinstance(payload.get("ac", payload.get("aircraft")), list):
+                failures.append(f"{source_name}: formato JSON non riconosciuto")
+                continue
+
+            if "ac" not in payload and isinstance(payload.get("aircraft"), list):
+                payload["ac"] = payload["aircraft"]
+            payload["skytraceSource"] = source_name
+            self.send_json(200, payload)
+            print(f"[ADS-B] Dati ottenuti da {source_name}")
             return
 
-        try:
-            payload = json.loads(raw)
-        except (ValueError, TypeError):
-            self.send_json(502, {"detail": f"La fonte ADS-B ha restituito contenuto non JSON (HTTP {status}, {content_type}). Riprova più tardi."})
-            return
-        if status < 200 or status >= 300:
-            self.send_json(429 if status == 429 else 502, {"detail": f"La fonte ADS-B ha risposto con HTTP {status}."})
-            return
-        if not isinstance(payload, dict) or not isinstance(payload.get("ac", payload.get("aircraft")), list):
-            fields = ", ".join(list(payload.keys())[:12]) if isinstance(payload, dict) else type(payload).__name__
-            self.send_json(502, {"detail": f"Formato ADS-B non riconosciuto{f' (campi: {fields})' if fields else ''}."})
-            return
-        if "ac" not in payload and isinstance(payload.get("aircraft"), list):
-            payload["ac"] = payload["aircraft"]
-        self.send_json(200, payload)
+        self.send_json(502, {
+            "detail": "Nessuna fonte ADS-B disponibile. " + "; ".join(failures) + ". Riprova tra qualche secondo: l'accesso alle fonti pubbliche può essere limitato o temporaneamente indisponibile.",
+            "providersTried": len(failures),
+        })
 
 
 def find_server():
@@ -92,6 +120,7 @@ def find_server():
             continue
     raise RuntimeError(f"Nessuna porta libera tra {START_PORT} e {MAX_PORT}.")
 
+
 if __name__ == "__main__":
     try:
         server, port = find_server()
@@ -103,7 +132,7 @@ if __name__ == "__main__":
     print("=" * 56)
     print(" SKYTRACE — Radar Aereo")
     print(f" Server locale: {url}")
-    print(" Proxy ADS-B locale attivo su /api/aircraft")
+    print(" Proxy ADS-B con 3 fonti di fallback attivo su /api/aircraft")
     print(" Per arrestarlo premi CTRL+C in questa finestra.")
     print("=" * 56)
     threading.Timer(0.8, lambda: webbrowser.open(url)).start()

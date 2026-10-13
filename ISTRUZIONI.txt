@@ -2,42 +2,42 @@ SKYTRACE — RADAR AEREO
 ======================
 
 CONTENUTO
-- public/index.html    Interfaccia del radar circolare (HTML, CSS, JavaScript)
-- public/_worker.js    Cloudflare Pages Advanced Mode: endpoint API + pubblicazione asset statici
+- public/index.html    Interfaccia radar circolare (HTML, CSS, JavaScript)
+- public/_worker.js    Cloudflare Pages Advanced Mode: asset statici + proxy ADS-B
 - AVVIA_LOCALHOST.bat Avvio rapido per Windows
-- avvia_localhost.py  Server locale e proxy ADS-B; prova le porte 10000, 10001, ... 10100
+- avvia_localhost.py  Server locale e proxy ADS-B
 - ISTRUZIONI.txt       Questa guida
 
 TEST LOCALE (WINDOWS)
 1. Estrai tutto lo ZIP mantenendo la cartella public e i file nella stessa cartella.
 2. Installa Python 3 se non è già installato: https://www.python.org/downloads/
 3. Fai doppio clic su AVVIA_LOCALHOST.bat.
-4. Si aprirà il browser su http://127.0.0.1:10000 (o sulla prima porta libera successiva).
-5. Per verificare il proxy, apri in un'altra scheda /api/health sullo stesso indirizzo, ad esempio http://127.0.0.1:10000/api/health. Deve apparire un JSON con "ok": true.
-6. Lascia aperta la finestra del server mentre provi il radar. Per fermarlo premi Ctrl+C.
+4. Si apre il browser su http://127.0.0.1:10000 (o sulla prima porta libera successiva).
+5. Per verificare il proxy, apri /api/health sul medesimo indirizzo. Deve apparire JSON con "ok": true.
+6. Il proxy prova tre fonti live in sequenza: ADSB One, Airplanes.live e ADSB.lol. Se una risponde 403, con HTML o non JSON, prova la successiva.
+7. Per arrestare il server premi Ctrl+C nella finestra del terminale.
 
 PUBBLICAZIONE SU GITHUB + CLOUDFLARE PAGES
-1. Nel repository GitHub carica/sostituisci i contenuti di questo ZIP alla radice del repository, non dentro un'altra cartella.
+1. Carica/sostituisci i contenuti di questo ZIP alla radice del repository GitHub, non dentro un'altra cartella.
 2. Verifica che public/index.html e public/_worker.js siano entrambi presenti su GitHub.
-3. Se nel repository è rimasta la vecchia cartella functions/api/aircraft.js, puoi eliminarla per evitare confusione: il nuovo public/_worker.js usa Cloudflare Pages Advanced Mode e prende il posto del sistema functions/.
-4. In Cloudflare Pages, Root directory vuoto, Framework preset None, Build command exit 0 (oppure vuoto), Build output directory public, branch main.
+3. Se esiste la vecchia cartella functions/api/aircraft.js, rimuovila per evitare confusione: il proxy usa Pages Advanced Mode tramite public/_worker.js.
+4. In Cloudflare Pages: Root directory vuoto, Framework preset None, Build command exit 0 (oppure vuoto), Build output directory public, production branch main.
 5. Avvia un nuovo deployment e attendi Success.
-6. Test diagnostico: apri https://TUO-PROGETTO.pages.dev/api/health. Deve rispondere con JSON simile a {"ok":true,"service":"SKYTRACE Pages Worker","mode":"advanced"}. Se invece mostra HTML/404, il deployment non sta usando public/_worker.js oppure il file non è stato caricato nella cartella corretta.
-7. Poi apri https://TUO-PROGETTO.pages.dev e premi Aggiorna. Il radar usa /api/aircraft come proxy della fonte ADS-B.
+6. Test diagnostico: apri https://TUO-PROGETTO.pages.dev/api/health. Deve rispondere JSON con "ok": true e l'elenco dei provider.
+7. Poi apri la home e premi Aggiorna.
 
-CONFIGURAZIONE CLOUDFLARE PAGES
-- Framework preset: None
-- Build command: exit 0
-- Build output directory: public
-- Root directory: vuoto
-- Production branch: main
+FONTI DATI
+- ADSB One: https://api.adsb.one/ — endpoint documentato: /v2/point/{lat}/{lon}/{radius}
+- Airplanes.live: https://airplanes.live/api-docs/ — endpoint documentato: /v2/point/{lat}/{lon}/{radius}
+- ADSB.lol: https://www.adsb.lol/ — endpoint v2 per latitudine/longitudine/raggio.
 
-DATI LIVE
-- Fonte: https://www.adsb.lol/
-- I dati vengono aggiornati ogni 20 secondi; copertura, disponibilità e limiti della fonte possono cambiare.
-- Non vengono inventati aerei in caso di errore API.
-- Geolocalizzazione browser disponibile solo su localhost o HTTPS.
-- Questa app è una visualizzazione informativa, non va usata per navigazione o decisioni di sicurezza.
+Il proxy prova le fonti una dopo l'altra se riceve HTTP non riuscito, HTML invece di JSON, JSON malformato o errore di connessione. La disponibilità, copertura, policy anti-abuso e limiti possono variare per ciascun servizio. L'app non inventa posizioni quando i dati live non sono disponibili.
 
-ATTRIBUZIONE
-Dati ADS-B forniti da ADSB.lol: https://www.adsb.lol/ . Consultare i termini e la licenza ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/ .
+AGGIORNAMENTO
+- Intervallo di aggiornamento della mappa: 20 secondi.
+- Coordinate iniziali: Milano. È possibile scegliere geolocalizzazione (su localhost/HTTPS) o coordinate manuali.
+- Raggi disponibili: 25, 50, 100, 150 e 250 miglia nautiche.
+- Questa app è solo informativa: non usarla per navigazione o decisioni di sicurezza.
+
+LICENZE E ATTRIBUZIONE
+Consultare i termini e le licenze dei provider utilizzati. Dati di comunità ADS-B possono essere distribuiti sotto ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/ .
