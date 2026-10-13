@@ -1,0 +1,38 @@
+SKYTRACE — RADAR AEREO
+======================
+
+CONTENUTO
+- public/index.html      Pagina completa del radar (HTML, CSS e JavaScript)
+- functions/api/aircraft.js Proxy API per Cloudflare Pages
+- AVVIA_LOCALHOST.bat    Avvio rapido su Windows
+- avvia_localhost.py     Server locale con proxy ADS-B; prova le porte 10000, 10001, ... 10100
+- ISTRUZIONI.txt         Questa guida
+
+TEST LOCALE (WINDOWS)
+1. Estrai tutto lo ZIP mantenendo le cartelle public e functions.
+2. Installa Python 3 se non è già installato: https://www.python.org/downloads/
+3. Fai doppio clic su AVVIA_LOCALHOST.bat.
+4. Si aprirà il browser su http://127.0.0.1:10000 (o sulla prima porta libera successiva).
+5. Lascia aperta la finestra del server mentre provi il radar. Per fermarlo premi Ctrl+C.
+
+PUBBLICAZIONE SU GITHUB + CLOUDFLARE PAGES
+1. Carica nel repository GitHub i contenuti di questa cartella ZIP, mantenendo le cartelle public e functions alla radice del repository.
+2. In Cloudflare vai su Workers & Pages e crea/Apri un progetto Pages collegato al repository.
+3. Framework preset: None.
+4. Build command: exit 0 (oppure lascialo vuoto).
+5. Build output directory: public.
+6. Root directory: lascia vuoto.
+7. Salva e avvia un nuovo deployment. La cartella functions deve restare alla radice del repository: Cloudflare Pages la usa per la rotta /api/aircraft.
+8. A deployment completato, apri il dominio *.pages.dev.
+
+DATI LIVE
+- Fonte primaria: https://www.adsb.lol/
+- Il parser accetta sia il campo `ac` (formato v2 compatibile ADSBExchange) sia `aircraft` usato da alcuni proxy.
+- L'app richiede dati entro il raggio selezionato ogni 20 secondi; raggio massimo 250 miglia nautiche.
+- Disponibilità, copertura e limiti della API possono cambiare. Nessun dato simulato viene mostrato come fosse reale.
+- Per usare la posizione del browser, clicca "Usa la mia posizione" e concedi il permesso. In alternativa inserisci manualmente le coordinate.
+- La geolocalizzazione del browser richiede localhost o HTTPS.
+- In caso di errore API, la pagina mostra un avviso e permette di riprovare.
+
+ATTRIBUZIONE E USO
+Dati ADS-B forniti da ADSB.lol: https://www.adsb.lol/ . Consultare i termini e la licenza ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/ . Questa app è una visualizzazione informativa e non va usata per navigazione o decisioni di sicurezza.
