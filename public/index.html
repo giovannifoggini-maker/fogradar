@@ -294,12 +294,21 @@
       state.controller = new AbortController();
       const url = `${API_ENDPOINT}?lat=${encodeURIComponent(state.center.lat)}&lon=${encodeURIComponent(state.center.lon)}&dist=${encodeURIComponent(state.range)}`;
       try {
-        const response = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store', signal: state.controller.signal, headers: { 'Accept': 'application/json' } });
-        if (!response.ok) {
-          if (response.status === 429) throw new Error('La fonte ADS-B ha temporaneamente limitato le richieste. Attendi un po’ e riprova.');
-          throw new Error(`La fonte ADS-B ha risposto con HTTP ${response.status}.`);
+        const response = await fetch(url, { method: 'GET', cache: 'no-store', signal: state.controller.signal, headers: { 'Accept': 'application/json' } });
+        const contentType = response.headers.get('content-type') || '';
+        const responseText = await response.text();
+        let data = null;
+        try { data = JSON.parse(responseText); } catch (_) { /* diagnosed below */ }
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+          if (/<!doctype\s+html|<html[\s>]/i.test(responseText)) {
+            throw new Error('Il server ha restituito una pagina HTML invece dei dati JSON. La rotta /api/aircraft non sta raggiungendo il proxy. Aggiorna public/_worker.js su GitHub e attendi il nuovo deployment.');
+          }
+          throw new Error(`Risposta API non JSON (HTTP ${response.status}, ${contentType || 'tipo contenuto sconosciuto'}). Riprova tra qualche secondo.`);
         }
-        const data = await response.json();
+        if (!response.ok) {
+          if (response.status === 429) throw new Error(data.detail || 'La fonte ADS-B ha temporaneamente limitato le richieste. Attendi un po’ e riprova.');
+          throw new Error(data.detail || `Il proxy ADS-B ha risposto con HTTP ${response.status}.`);
+        }
         // ADSB.lol's v2 endpoints use the ADSBExchange-compatible `ac` key;
         // some alternate endpoints/proxies expose the same list as `aircraft`.
         const aircraftRows = data && Array.isArray(data.ac)

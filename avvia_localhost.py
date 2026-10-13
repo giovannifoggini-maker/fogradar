@@ -20,7 +20,10 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/api/aircraft":
+        if parsed.path in ("/api/health", "/api/health/"):
+            self.send_json(200, {"ok": True, "service": "SKYTRACE local proxy", "mode": "local"})
+            return
+        if parsed.path in ("/api/aircraft", "/api/aircraft/"):
             self.handle_aircraft(parsed.query)
             return
         super().do_GET()
@@ -51,25 +54,32 @@ class QuietHandler(SimpleHTTPRequestHandler):
         req = Request(upstream, headers={"Accept": "application/json", "User-Agent": "SkytraceRadar/1.0"})
         try:
             with urlopen(req, timeout=14) as response:
-                body = response.read()
+                raw = response.read().decode("utf-8", "replace")
                 status = response.status
                 content_type = response.headers.get("Content-Type", "application/json; charset=utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "no-store, max-age=0")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
         except HTTPError as error:
-            body = error.read()
-            self.send_response(error.code)
-            self.send_header("Content-Type", error.headers.get("Content-Type", "application/json; charset=utf-8"))
-            self.send_header("Cache-Control", "no-store, max-age=0")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            raw = error.read().decode("utf-8", "replace")
+            status = error.code
+            content_type = error.headers.get("Content-Type", "application/json; charset=utf-8")
         except (URLError, TimeoutError, OSError):
             self.send_json(502, {"detail": "La fonte ADS-B non è raggiungibile in questo momento."})
+            return
+
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError):
+            self.send_json(502, {"detail": f"La fonte ADS-B ha restituito contenuto non JSON (HTTP {status}, {content_type}). Riprova più tardi."})
+            return
+        if status < 200 or status >= 300:
+            self.send_json(429 if status == 429 else 502, {"detail": f"La fonte ADS-B ha risposto con HTTP {status}."})
+            return
+        if not isinstance(payload, dict) or not isinstance(payload.get("ac", payload.get("aircraft")), list):
+            fields = ", ".join(list(payload.keys())[:12]) if isinstance(payload, dict) else type(payload).__name__
+            self.send_json(502, {"detail": f"Formato ADS-B non riconosciuto{f' (campi: {fields})' if fields else ''}."})
+            return
+        if "ac" not in payload and isinstance(payload.get("aircraft"), list):
+            payload["ac"] = payload["aircraft"]
+        self.send_json(200, payload)
 
 
 def find_server():
