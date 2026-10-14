@@ -78,6 +78,13 @@ NOTE IMPORTANTI
 - Questa app è solo informativa e non va usata per navigazione o decisioni di sicurezza.
 
 
+AGGIORNAMENTO POSIZIONE (versione corrente)
+- Il centro iniziale e i campi di coordinate sono sincronizzati su Torino (45.07030, 7.68690).
+- “Usa la mia posizione” richiede una posizione GPS fresca; consenti l'accesso quando richiesto dal browser.
+- Dopo l'acquisizione, l'etichetta sopra il radar mostra le coordinate attive.
+- Cambiando coordinate, GPS o raggio, la richiesta precedente viene annullata e parte subito una ricerca per il nuovo centro. Una risposta tardiva del centro precedente viene ignorata.
+- Premi Invio dopo aver scritto le coordinate oppure usa “Imposta coordinate”.
+
 DIAGNOSTICA CLOUDFARE (versione aggiornata)
 - Il Worker invia solo Accept: application/json, come il proxy locale per gli header espliciti; rimuove User-Agent e Referer personalizzati.
 - La cache API è stata versionata per non riutilizzare immediatamente risposte d'errore precedenti.

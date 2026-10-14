@@ -137,7 +137,7 @@
 
     <main class="layout">
       <section class="panel radar-panel" aria-label="Schermo radar">
-        <div class="panel-head"><p class="eyebrow">RADAR PRIMARIO <span style="color:#7eaa98">/ NORTH-UP</span></p><div class="subhead"><span id="centerHeader">MILANO · ITALIA</span><br><span id="rangeHeader">RAGGIO 50 NM</span></div></div>
+        <div class="panel-head"><p class="eyebrow">RADAR PRIMARIO <span style="color:#7eaa98">/ NORTH-UP</span></p><div class="subhead"><span id="centerHeader">TORINO · ITALIA</span><br><span id="rangeHeader">RAGGIO 50 NM</span><br><span id="centerCoords" class="mono">45.07030, 7.68690</span></div></div>
         <div class="scope-stage">
           <div class="scope" id="scope">
             <svg class="scope-svg" viewBox="0 0 600 600" role="img" aria-label="Radar circolare con posizioni degli aerei">
@@ -169,9 +169,9 @@
           <div class="panel-head"><p class="eyebrow">PARAMETRI RADAR</p><span class="subhead">AREA DI RICERCA</span></div>
           <div class="controls">
             <div><label for="rangeSelect" class="field-label">Raggio del radar</label><select id="rangeSelect" class="select"><option value="25">25 miglia nautiche</option><option value="50" selected>50 miglia nautiche</option><option value="100">100 miglia nautiche</option><option value="150">150 miglia nautiche</option><option value="250">250 miglia nautiche (max)</option></select></div>
-            <div><span class="field-label">Centro manuale · coordinate</span><div class="coord-grid"><input id="latInput" class="input" inputmode="decimal" type="number" min="-90" max="90" step="any" value="45.4642" aria-label="Latitudine" placeholder="Latitudine"><input id="lonInput" class="input" inputmode="decimal" type="number" min="-180" max="180" step="any" value="9.1900" aria-label="Longitudine" placeholder="Longitudine"></div><button id="applyCoords" class="btn" type="button" style="width:100%;margin-top:8px">Imposta coordinate</button></div>
+            <div><span class="field-label">Centro manuale · coordinate</span><div class="coord-grid"><input id="latInput" class="input" inputmode="decimal" type="number" min="-90" max="90" step="any" value="45.0703" aria-label="Latitudine" placeholder="Latitudine"><input id="lonInput" class="input" inputmode="decimal" type="number" min="-180" max="180" step="any" value="7.6869" aria-label="Longitudine" placeholder="Longitudine"></div><button id="applyCoords" class="btn" type="button" style="width:100%;margin-top:8px">Imposta coordinate</button></div>
             <button id="geoBtn" class="btn" type="button">◎ Usa la mia posizione</button>
-            <div id="statusMessage" class="notice" role="status">Connessione alla fonte ADS-B in corso. Il centro iniziale è Milano.</div>
+            <div id="statusMessage" class="notice" role="status">Centro iniziale: Torino (45.07030, 7.68690). Premi “Usa la mia posizione” oppure inserisci le coordinate e premi “Imposta coordinate”.</div>
           </div>
         </section>
 
@@ -232,7 +232,8 @@
       lastSource: null,
       directAvio: false,
       timer: null,
-      controller: null
+      controller: null,
+      requestId: 0
     };
 
     const escText = (value, fallback = '—') => {
@@ -284,6 +285,7 @@
     }
     function updateCenterLabels() {
       $('centerHeader').textContent = state.center.name.toLocaleUpperCase('it-IT');
+      $('centerCoords').textContent = `${state.center.lat.toFixed(5)}, ${state.center.lon.toFixed(5)}`;
       $('rangeHeader').textContent = `RAGGIO ${state.range} NM`;
       $('rangeMetric').textContent = String(state.range);
       $('rangeFoot').textContent = String(state.range);
@@ -347,7 +349,7 @@
       return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
     }
 
-    async function fetchAvioDirect() {
+    async function fetchAvioDirect(signal) {
       if (isLocalHost()) return { ok: false, skipped: true, reason: 'fallback diretto disattivato in localhost: il proxy locale già funziona.' };
       if (state.range > 100) {
         return { ok: false, skipped: true, reason: 'AvioADSB anonimo consente un raggio massimo di 100 NM; seleziona 100 NM o meno per usare il fallback gratuito.' };
@@ -369,7 +371,7 @@
       try {
         const response = await fetch(endpoint, {
           method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store',
-          signal: state.controller.signal, headers: { 'Accept': 'application/json' }
+          signal, headers: { 'Accept': 'application/json' }
         });
         const contentType = response.headers.get('content-type') || 'tipo contenuto sconosciuto';
         const responseText = await response.text();
@@ -439,9 +441,16 @@
       return 'Le fonti di volo sono momentaneamente non raggiungibili. Il radar continuerà a riprovare automaticamente; finché non arrivano dati reali, non verranno mostrati bersagli simulati.';
     }
 
-    async function fetchAircraft() {
-      if (state.loading) return;
+    async function fetchAircraft(force = false) {
+      // Se il centro cambia durante una richiesta, la nuova ricerca annulla quella
+      // precedente. requestId impedisce alla risposta vecchia di sovrascrivere il nuovo centro.
+      if (state.loading && !force) return;
+      const requestId = ++state.requestId;
+      if (state.controller) state.controller.abort();
+      const controller = new AbortController();
+      state.controller = controller;
       const queryKey = cacheKeyForCurrentSearch();
+
       if (state.currentDataKey !== queryKey) {
         if (!restoreCachedData(queryKey)) {
           state.aircraft = [];
@@ -469,6 +478,11 @@
           setStatus(`${friendlyUnavailableMessage()} Prossimo tentativo automatico tra circa ${Math.ceil(seconds / 60)} min.`, 'info');
           $('liveText').textContent = state.dataStale ? 'DATI SALVATI · NON LIVE' : 'IN ATTESA DI DATI';
         }
+        if (requestId === state.requestId) {
+          state.loading = false;
+          if (state.controller === controller) state.controller = null;
+          $('refreshBtn').disabled = false;
+        }
         return;
       }
 
@@ -476,9 +490,7 @@
       $('refreshBtn').disabled = true;
       $('livePill').classList.remove('error');
       $('liveText').textContent = 'AGGIORNAMENTO';
-      setStatus(state.dataStale ? 'Tentativo di aggiornamento: nel frattempo manteniamo visibili gli ultimi dati salvati…' : 'Richiesta dei dati reali ADS-B in corso…');
-      if (state.controller) state.controller.abort();
-      state.controller = new AbortController();
+      setStatus(state.dataStale ? 'Aggiornamento del centro attivo in corso; manteniamo visibili gli ultimi dati salvati finché arrivano quelli nuovi…' : `Ricerca dei voli reali intorno a ${state.center.lat.toFixed(5)}, ${state.center.lon.toFixed(5)}…`);
       const url = `${API_ENDPOINT}?lat=${encodeURIComponent(state.center.lat)}&lon=${encodeURIComponent(state.center.lon)}&dist=${encodeURIComponent(state.range)}`;
       let succeeded = false;
       let directFailure = '';
@@ -486,11 +498,10 @@
         let data = null;
         let usedDirectAvio = false;
 
-        // Online: prova prima una fonte gratuita direttamente dal browser del visitatore.
-        // In questo modo il provider vede la rete dell'utente, non l'IP egress di Cloudflare.
-        // In localhost si conserva esattamente il proxy locale già funzionante.
+        // Online: prova una fonte gratuita dal browser dell'utente; in localhost
+        // resta attivo il proxy Python, che già funziona nel progetto dell'utente.
         if (!isLocalHost()) {
-          const direct = await fetchAvioDirect();
+          const direct = await fetchAvioDirect(controller.signal);
           if (direct.ok) {
             data = direct.data;
             usedDirectAvio = true;
@@ -499,9 +510,9 @@
           }
         }
 
-        // Se la fonte diretta non è disponibile / è in pausa, ripiega sulle quattro fonti del proxy.
+        // Se il fallback diretto non è disponibile, prova il proxy del sito.
         if (!data) {
-          const response = await fetch(url, { method: 'GET', cache: 'no-store', signal: state.controller.signal, headers: { 'Accept': 'application/json' } });
+          const response = await fetch(url, { method: 'GET', cache: 'no-store', signal: controller.signal, headers: { 'Accept': 'application/json' } });
           const contentType = response.headers.get('content-type') || '';
           const responseText = await response.text();
           let proxyData = null;
@@ -516,11 +527,13 @@
           data = proxyData;
         }
 
+        // Ignora la risposta se nel frattempo è stato scelto un centro/raggio diverso.
+        if (requestId !== state.requestId || queryKey !== cacheKeyForCurrentSearch()) return;
         applyAircraftData(data, queryKey, usedDirectAvio);
         succeeded = true;
       } catch (err) {
         if (err && err.name === 'AbortError') return;
-        // I dettagli rimangono nella console per la diagnosi, senza allarmare ad ogni 403/429.
+        if (requestId !== state.requestId || queryKey !== cacheKeyForCurrentSearch()) return;
         const baseError = err instanceof Error ? err.message : 'Errore imprevisto durante il caricamento dei dati.';
         state.lastError = directFailure ? `${baseError} · Fallback AvioADSB: ${directFailure}` : baseError;
         console.warn('[SKYTRACE] aggiornamento live fallito:', state.lastError);
@@ -533,12 +546,16 @@
         setStatus(friendlyUnavailableMessage(), 'info');
         $('liveText').textContent = state.dataStale ? 'DATI SALVATI · NON LIVE' : 'IN ATTESA DI DATI';
       } finally {
-        state.loading = false;
-        $('refreshBtn').disabled = false;
-        if (succeeded) {
-          $('liveText').textContent = state.directAvio ? 'AVIOADSB · DATI RECENTI' : 'LIVE ADS-B';
-        } else if (state.dataStale) $('liveText').textContent = 'DATI SALVATI · NON LIVE';
-        else $('liveText').textContent = 'IN ATTESA DI DATI';
+        // Una vecchia richiesta annullata non deve disattivare il caricamento nuovo.
+        if (requestId === state.requestId) {
+          state.loading = false;
+          if (state.controller === controller) state.controller = null;
+          $('refreshBtn').disabled = false;
+          if (succeeded) {
+            $('liveText').textContent = state.directAvio ? 'AVIOADSB · DATI RECENTI' : 'LIVE ADS-B';
+          } else if (state.dataStale) $('liveText').textContent = 'DATI SALVATI · NON LIVE';
+          else $('liveText').textContent = 'IN ATTESA DI DATI';
+        }
       }
     }
 
@@ -623,32 +640,88 @@
       updateTimeLabel(); updateCenterLabels(); renderRadar(); renderSelected(); renderList();
     }
 
-    $('refreshBtn').addEventListener('click', fetchAircraft);
+    function updateCoordinateInputs() {
+      $('latInput').value = state.center.lat.toFixed(5);
+      $('lonInput').value = state.center.lon.toFixed(5);
+    }
+
+    function setCenter(lat, lon, name, message) {
+      // Cambiare posizione annulla richieste avviate per il centro precedente.
+      if (state.controller) state.controller.abort();
+      state.center = { lat, lon, name };
+      state.selectedHex = null;
+      state.currentDataKey = null;
+      state.nextRetryAt = 0;
+      state.retryDelayMs = 120000;
+      state.consecutiveFailures = 0;
+      state.lastError = null;
+      state.aircraft = [];
+      state.lastUpdated = null;
+      state.dataStale = false;
+      state.lastSource = null;
+      state.directAvio = false;
+      updateCoordinateInputs();
+      updateCenterLabels();
+      renderAll();
+      setStatus(message || `Centro aggiornato: ${lat.toFixed(5)}, ${lon.toFixed(5)}. Ricerca dei voli in corso…`, 'info');
+      fetchAircraft(true);
+    }
+
+    $('refreshBtn').addEventListener('click', () => fetchAircraft(true));
     $('rangeSelect').addEventListener('change', () => {
       state.range = Number($('rangeSelect').value) || 50;
-      updateCenterLabels(); fetchAircraft();
+      state.currentDataKey = null;
+      updateCenterLabels();
+      fetchAircraft(true);
     });
-    $('applyCoords').addEventListener('click', () => {
-      const lat = Number($('latInput').value), lon = Number($('lonInput').value);
-      if ($('latInput').value.trim() === '' || $('lonInput').value.trim() === '' || !Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-        setStatus('Coordinate non valide. La latitudine deve essere tra −90 e 90 e la longitudine tra −180 e 180.', 'error'); return;
+
+    function applyManualCoordinates() {
+      const latText = $('latInput').value.trim();
+      const lonText = $('lonInput').value.trim();
+      const lat = Number(latText), lon = Number(lonText);
+      if (latText === '' || lonText === '' || !Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        setStatus('Coordinate non valide. Latitudine: da −90 a 90; longitudine: da −180 a 180.', 'error'); return;
       }
-      state.center = { lat, lon, name: 'Coordinate manuali' };
-      state.selectedHex = null;
-      updateCenterLabels(); fetchAircraft();
-    });
+      setCenter(lat, lon, 'Coordinate manuali', `Centro manuale impostato su ${lat.toFixed(5)}, ${lon.toFixed(5)}. Ricerca dei voli in corso…`);
+    }
+
+    $('applyCoords').addEventListener('click', applyManualCoordinates);
+    for (const id of ['latInput', 'lonInput']) {
+      $(id).addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          applyManualCoordinates();
+        }
+      });
+    }
+
     $('geoBtn').addEventListener('click', () => {
-      if (!('geolocation' in navigator)) { setStatus('Questo browser non supporta la geolocalizzazione. Puoi inserire manualmente latitudine e longitudine.', 'error'); return; }
-      $('geoBtn').disabled = true;
+      if (!window.isSecureContext) {
+        setStatus('Per ottenere la posizione GPS, apri il sito con HTTPS oppure usa localhost.', 'error'); return;
+      }
+      if (!('geolocation' in navigator)) {
+        setStatus('Questo browser non supporta la geolocalizzazione. Inserisci manualmente latitudine e longitudine.', 'error'); return;
+      }
+      const button = $('geoBtn');
+      button.disabled = true;
+      button.textContent = '◎ Rilevamento posizione…';
+      setStatus('Richiesta della posizione al browser. Quando compare la richiesta, scegli “Consenti”.', 'info');
       navigator.geolocation.getCurrentPosition(position => {
-        state.center = { lat: position.coords.latitude, lon: position.coords.longitude, name: 'La mia posizione' };
-        $('latInput').value = state.center.lat.toFixed(5); $('lonInput').value = state.center.lon.toFixed(5);
-        state.selectedHex = null; $('geoBtn').disabled = false; updateCenterLabels(); fetchAircraft();
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        button.disabled = false;
+        button.textContent = '◎ Usa la mia posizione';
+        setCenter(lat, lon, 'La mia posizione', `Posizione GPS acquisita (${lat.toFixed(5)}, ${lon.toFixed(5)}). Aggiorno subito il radar…`);
       }, err => {
-        $('geoBtn').disabled = false;
-        const text = err.code === 1 ? 'Permesso di posizione negato. Puoi inserire manualmente le coordinate.' : err.code === 2 ? 'Posizione non disponibile. Prova a inserire le coordinate manualmente.' : 'Richiesta di posizione scaduta. Riprova o inserisci le coordinate manualmente.';
-        setStatus(text, 'error');
-      }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
+        button.disabled = false;
+        button.textContent = '◎ Usa la mia posizione';
+        const message = err.code === 1
+          ? 'Permesso di posizione negato. Consenti la posizione nelle impostazioni del sito oppure inserisci manualmente le coordinate.'
+          : err.code === 2
+            ? 'Il dispositivo non ha fornito una posizione. Attiva i servizi di posizione e riprova, oppure inserisci le coordinate manualmente.'
+            : 'La richiesta GPS è scaduta. Riprova oppure inserisci latitudine e longitudine manualmente.';
+        setStatus(message, 'error');
+      }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     });
     $('searchInput').addEventListener('input', renderList);
 
