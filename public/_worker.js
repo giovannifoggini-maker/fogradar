@@ -214,6 +214,7 @@ export default {
         attribution: "ADSB.fi data must be credited and linked when used; public endpoint is for personal, non-commercial use.",
         requestHeaders: "Accept only; no custom User-Agent or Referer",
         cacheVersion: 3,
+        browserFallback: "AvioADSB direct anonymous (100/day/network; max 100 NM)",
         credentialsRequired: false,
       });
     }

@@ -1,15 +1,19 @@
 SKYTRACE — RADAR AEREO (fonti ADS-B pubbliche)
 ================================================
 
-Questa versione usa quattro fonti ADS-B pubbliche in sequenza:
+Questa versione mantiene quattro fonti ADS-B pubbliche nel proxy:
 1. ADSB One
 2. Airplanes.live
 3. ADSB.lol
 4. ADSB.fi (endpoint v3 documentato)
 
-Non servono credenziali o chiavi API per configurare l'app. La disponibilità
-non è garantita: i provider possono limitare richieste (403/429), soprattutto
-da alcuni server cloud. In tal caso il radar non interrompe la pagina: conserva gli ultimi dati ricevuti
+In aggiunta, sul sito pubblicato (non su localhost) prova AvioADSB direttamente
+nel browser dell'utente quando non è disponibile una chiave diretta: questo evita
+che la richiesta gratuita parta dall'IP egress di Cloudflare, che alcuni provider
+possono limitare. AvioADSB non richiede una chiave per l'uso personale, ma il piano
+anonimo è limitato a 1 richiesta ogni 10 secondi, 100 richieste al giorno per rete
+e raggio massimo di 100 NM. Per non superare il limite, SKYTRACE aspetta circa
+15 minuti dopo un tentativo diretto. Nessun abbonamento o API key a pagamento è richiesto. In tal caso il radar non interrompe la pagina: conserva gli ultimi dati ricevuti
 per la stessa area (marcandoli come NON LIVE) e usa tentativi progressivamente
 più distanziati. Se non è mai arrivato un dato reale, mostra uno stato informativo.
 Non inventa posizioni o dati degli aeromobili.
@@ -20,9 +24,8 @@ Non inventa posizioni o dati degli aeromobili.
 - Fai doppio clic su AVVIA_LOCALHOST.bat.
 - Il server prova porte da 10000 a 10100 e apre il browser sulla prima libera.
 - Il proxy tenta ADSB One, poi Airplanes.live, ADSB.lol e infine ADSB.fi.
-- Il proxy locale fa le richieste dalla tua connessione; Cloudflare le fa dalla propria infrastruttura.
-  Se il provider blocca gli IP cloud con 403/429, nessuna modifica del front-end può garantire
-  gli stessi risultati: il radar segnala l'indisponibilità e riprova rispettando le pause.
+- In localhost resta attivo il proxy Python e la logica originale delle quattro fonti.
+- Il fallback AvioADSB diretto è pensato per il sito pubblicato; in locale viene saltato.
 - Per fermare il server premi CTRL+C nella finestra del terminale.
 
 2. PUBBLICAZIONE SU GITHUB + CLOUDFLARE PAGES
@@ -52,8 +55,14 @@ Salva le modifiche su GitHub e attendi che Cloudflare termini il nuovo deploymen
 - Poi apri la home del radar.
 
 NOTE IMPORTANTI
-- Il radar verifica i dati ogni 60 secondi, ma dopo errori applica un'attesa progressiva
+- Il proxy verifica i dati ogni 60 secondi, ma dopo errori applica un'attesa progressiva
   fino a 10 minuti. Anche il proxy mette in pausa temporanea le fonti dopo 403/429.
+- Sul sito cloud, se il feed diretto AvioADSB funziona, l'app rispetta il suo piano anonimo
+  gratuito facendo un tentativo al massimo ogni 15 minuti; i dati possono quindi diventare
+  NON LIVE tra gli aggiornamenti. L'API anonima consente fino a 100 richieste/giorno per rete
+  e un raggio massimo di 100 NM, quindi seleziona 100 NM o meno per quel fallback.
+- AvioADSB richiede attribuzione: “Data: AvioADSB (CC BY 4.0)” con link a https://avioadsb.org/.
+  È un feed comunitario per uso personale/ricerca, non certificato per navigazione o sicurezza.
 - Gli ultimi dati riusciti vengono conservati nel browser per 24 ore e, durante un
   disservizio, sono marcati chiaramente come NON LIVE. Se non esiste una lettura
   precedente, la pagina mostra uno stato informativo e non inventa aerei.
@@ -64,6 +73,7 @@ NOTE IMPORTANTI
   non commerciale. I suoi endpoint pubblici sono limitati a 1 richiesta al secondo;
   questa app controlla i voli con intervalli più lunghi. Termini ufficiali:
   https://github.com/adsbfi/opendata/blob/main/README.md
+- AvioADSB documentazione ufficiale e limiti anonimi: https://avioadsb.org/docs/api
 - I dati possono avere ritardi, copertura incompleta o campi mancanti.
 - Questa app è solo informativa e non va usata per navigazione o decisioni di sicurezza.
 
@@ -73,3 +83,11 @@ DIAGNOSTICA CLOUDFARE (versione aggiornata)
 - La cache API è stata versionata per non riutilizzare immediatamente risposte d'errore precedenti.
 - Dopo il deploy, apri https://TUO-PROGETTO.pages.dev/api/health e verifica requestHeaders = "Accept only; no custom User-Agent or Referer" e cacheVersion = 3.
 - Testa poi https://TUO-PROGETTO.pages.dev/api/aircraft?lat=45.0703&lon=7.6869&dist=50. Se ricevi JSON con il campo ac, l'API funziona; se torna ancora 403/429, il provider sta bloccando o limitando le richieste provenienti dall'infrastruttura cloud. In quel caso una modifica HTML/Worker non può garantire di replicare le richieste uscenti dal tuo PC: servirà un provider che autorizzi quelle richieste oppure un backend eseguito su un host consentito.
+
+
+FALLBACK GRATIS ONLINE
+- La pagina prova AvioADSB dal browser dell'utente prima del proxy Cloudflare, solo sul sito pubblicato.
+- Se il browser/provider impedisce la richiesta (CORS, 403 o rete), passa al proxy esistente.
+- Test manuale (Torino, 50 NM): https://avioadsb.org/v1/point/45.0703/7.6869/50
+- Se il test restituisce JSON ma la pagina riporta CORS, il provider non consente di leggere la risposta cross-origin: il browser mostrerà un messaggio di diagnostica e userà il proxy come ripiego.
+- Nessun dato aereo fittizio viene generato. Se anche AvioADSB e il proxy non rispondono, la pagina mostra l'indisponibilità.

@@ -198,7 +198,7 @@
       </aside>
     </main>
 
-    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Fonti live: <a href="https://api.adsb.one/" target="_blank" rel="noopener noreferrer">ADSB One</a> · <a href="https://airplanes.live/api-docs/" target="_blank" rel="noopener noreferrer">Airplanes.live</a> · <a href="https://www.adsb.lol/docs/api/" target="_blank" rel="noopener noreferrer">ADSB.lol</a> · Dati anche da <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">ADSB.fi</a> (uso personale/non commerciale)</span></footer>
+    <footer class="footer"><span>SKYTRACE · VISUALIZZAZIONE INFORMATIVA, NON PER NAVIGAZIONE</span><span>Fonti live: <a href="https://api.adsb.one/" target="_blank" rel="noopener noreferrer">ADSB One</a> · <a href="https://airplanes.live/api-docs/" target="_blank" rel="noopener noreferrer">Airplanes.live</a> · <a href="https://www.adsb.lol/docs/api/" target="_blank" rel="noopener noreferrer">ADSB.lol</a> · <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">ADSB.fi</a> · Fallback gratuito diretto: <a href="https://avioadsb.org/" target="_blank" rel="noopener noreferrer">AvioADSB (CC BY 4.0)</a></span></footer>
   </div>
 
   <script>
@@ -206,6 +206,13 @@
     'use strict';
     const API_ENDPOINT = '/api/aircraft';
     const REFRESH_MS = 60000;
+    // Fallback gratuito usato dal browser del visitatore quando il proxy cloud non riceve dati.
+    // Limiti anonimi AvioADSB: 1 richiesta/10 s e 100 al giorno per rete; cadenza conservativa 15 min.
+    const AVIO_DIRECT_SOURCE = 'AvioADSB · richiesta diretta dal browser';
+    const AVIO_DIRECT_BASE = 'https://avioadsb.org/v1/point';
+    const AVIO_DIRECT_CADENCE_MS = 15 * 60 * 1000;
+    const AVIO_DIRECT_LAST_REQUEST_KEY = 'skytrace-avioadsb-last-request-v1';
+    let avioDirectLastAttemptMemory = 0;
     const DEFAULT_CENTER = { lat: 45.0703, lon: 7.6869, name: 'Torino · Italia' };
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const $ = (id) => document.getElementById(id);
@@ -222,6 +229,8 @@
       consecutiveFailures: 0,
       nextRetryAt: 0,
       retryDelayMs: 120000,
+      lastSource: null,
+      directAvio: false,
       timer: null,
       controller: null
     };
@@ -307,6 +316,13 @@
         state.aircraft = saved.aircraft;
         state.lastUpdated = new Date(savedAt);
         state.dataStale = true;
+        state.lastSource = saved.source || null;
+        state.directAvio = saved.directAvio === true || state.lastSource === AVIO_DIRECT_SOURCE;
+        state.nextRetryAt = 0;
+        if (state.directAvio) {
+          const lastAttempt = Number(localStorage.getItem(AVIO_DIRECT_LAST_REQUEST_KEY) || 0);
+          if (Number.isFinite(lastAttempt) && lastAttempt > 0) state.nextRetryAt = Math.max(0, lastAttempt + AVIO_DIRECT_CADENCE_MS);
+        }
         state.currentDataKey = key;
         state.selectedHex = state.aircraft.some(a => String(a.hex) === String(state.selectedHex))
           ? state.selectedHex
@@ -320,10 +336,99 @@
 
     function saveCachedData(key) {
       try {
-        localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), aircraft: state.aircraft.slice(0, 1200) }));
+        localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), aircraft: state.aircraft.slice(0, 1200), source: state.lastSource, directAvio: state.directAvio }));
       } catch (_) {
         // Lo spazio locale può essere esaurito o disabilitato: il radar continua a funzionare senza cache.
       }
+    }
+
+    function isLocalHost() {
+      const host = String(location.hostname || '').toLowerCase();
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+    }
+
+    async function fetchAvioDirect() {
+      if (isLocalHost()) return { ok: false, skipped: true, reason: 'fallback diretto disattivato in localhost: il proxy locale già funziona.' };
+      if (state.range > 100) {
+        return { ok: false, skipped: true, reason: 'AvioADSB anonimo consente un raggio massimo di 100 NM; seleziona 100 NM o meno per usare il fallback gratuito.' };
+      }
+      let lastAttempt = avioDirectLastAttemptMemory;
+      try {
+        const stored = Number(localStorage.getItem(AVIO_DIRECT_LAST_REQUEST_KEY) || 0);
+        if (Number.isFinite(stored)) lastAttempt = Math.max(lastAttempt, stored);
+      } catch (_) { /* la memoria del tab mantiene comunque la pausa */ }
+      const waitMs = AVIO_DIRECT_CADENCE_MS - (Date.now() - lastAttempt);
+      if (lastAttempt > 0 && waitMs > 0) {
+        return { ok: false, throttled: true, reason: `AvioADSB gratuito: prossimo tentativo tra circa ${Math.ceil(waitMs / 60000)} min (limite anonimo di 100 richieste/giorno per rete).` };
+      }
+
+      const attemptedAt = Date.now();
+      avioDirectLastAttemptMemory = attemptedAt;
+      try { localStorage.setItem(AVIO_DIRECT_LAST_REQUEST_KEY, String(attemptedAt)); } catch (_) { /* non impedire la richiesta */ }
+      const endpoint = `${AVIO_DIRECT_BASE}/${encodeURIComponent(state.center.lat)}/${encodeURIComponent(state.center.lon)}/${encodeURIComponent(state.range)}`;
+      try {
+        const response = await fetch(endpoint, {
+          method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store',
+          signal: state.controller.signal, headers: { 'Accept': 'application/json' }
+        });
+        const contentType = response.headers.get('content-type') || 'tipo contenuto sconosciuto';
+        const responseText = await response.text();
+        let data = null;
+        try { data = JSON.parse(responseText); } catch (_) { /* diagnosi sotto */ }
+        if (!response.ok) {
+          const detail = data && data.detail ? `: ${data.detail}` : '';
+          return { ok: false, status: response.status, reason: `AvioADSB HTTP ${response.status} (${contentType})${detail}` };
+        }
+        if (!data || typeof data !== 'object' || !Array.isArray(data.ac)) {
+          return { ok: false, reason: `AvioADSB ha restituito un formato inatteso (${contentType}).` };
+        }
+        return {
+          ok: true,
+          data: { ...data, skytraceSource: AVIO_DIRECT_SOURCE },
+          nextAllowedAt: attemptedAt + AVIO_DIRECT_CADENCE_MS
+        };
+      } catch (error) {
+        if (error && error.name === 'AbortError') throw error;
+        const reason = error instanceof TypeError
+          ? 'AvioADSB non è leggibile direttamente dal browser (possibile CORS o blocco della rete).'
+          : `AvioADSB: ${error instanceof Error ? error.message : 'errore di connessione'}`;
+        return { ok: false, reason };
+      }
+    }
+
+    function applyAircraftData(data, queryKey, directAvio = false) {
+      const aircraftRows = Array.isArray(data.ac) ? data.ac : Array.isArray(data.aircraft) ? data.aircraft : null;
+      if (!aircraftRows) {
+        const fields = Object.keys(data || {}).join(', ');
+        throw new Error(`Formato API non riconosciuto${fields ? ` (campi ricevuti: ${fields})` : ''}.`);
+      }
+      const now = Date.now();
+      state.aircraft = aircraftRows
+        .filter(a => a && finite(numeric(a.lat)) && finite(numeric(a.lon)))
+        .map(a => {
+          const lat = Number(a.lat), lon = Number(a.lon);
+          return { ...a, lat, lon, distanceNm: haversineNm(state.center.lat, state.center.lon, lat, lon), bearing: bearingDegrees(state.center.lat, state.center.lon, lat, lon) };
+        })
+        .filter(a => a.distanceNm <= state.range && (numeric(a.seen_pos) === null || Number(a.seen_pos) <= 240))
+        .sort((a, b) => a.distanceNm - b.distanceNm);
+      state.lastUpdated = new Date(now);
+      state.lastError = null;
+      state.dataStale = false;
+      state.currentDataKey = queryKey;
+      state.lastSource = directAvio ? AVIO_DIRECT_SOURCE : (data.skytraceSource || 'Proxy ADS-B');
+      state.directAvio = directAvio;
+      state.consecutiveFailures = 0;
+      state.nextRetryAt = directAvio ? Math.max(now + AVIO_DIRECT_CADENCE_MS, Number(localStorage.getItem(AVIO_DIRECT_LAST_REQUEST_KEY) || 0) + AVIO_DIRECT_CADENCE_MS) : 0;
+      state.retryDelayMs = 120000;
+      if (!state.aircraft.some(a => String(a.hex) === String(state.selectedHex))) state.selectedHex = state.aircraft.length ? String(state.aircraft[0].hex) : null;
+      saveCachedData(queryKey);
+      updateCenterLabels();
+      renderAll();
+      const sourceLabel = ` Fonte: ${state.lastSource}.`;
+      const freeLimitNote = directAvio ? ' AvioADSB è gratuito senza chiave: per rispettare il limite anonimo (100 richieste/giorno per rete), il prossimo aggiornamento automatico avverrà fra circa 15 minuti; raggio massimo 100 NM.' : '';
+      setStatus(state.aircraft.length
+        ? `Feed aggiornato: ${state.aircraft.length} velivoli con posizione recente entro ${state.range} NM.${sourceLabel}${freeLimitNote}`
+        : `Nessun velivolo con posizione recente trovato entro ${state.range} NM.${sourceLabel}${freeLimitNote} Puoi aumentare il raggio o cambiare centro.`, state.aircraft.length ? 'good' : 'info');
     }
 
     function friendlyUnavailableMessage() {
@@ -343,14 +448,27 @@
           state.lastUpdated = null;
           state.dataStale = false;
           state.selectedHex = null;
+          state.lastSource = null;
+          state.directAvio = false;
+          state.nextRetryAt = 0;
+          state.retryDelayMs = 120000;
           state.currentDataKey = queryKey;
           renderAll();
         }
       }
       if (Date.now() < state.nextRetryAt) {
         const seconds = Math.max(1, Math.ceil((state.nextRetryAt - Date.now()) / 1000));
-        setStatus(`${friendlyUnavailableMessage()} Prossimo tentativo automatico tra circa ${Math.ceil(seconds / 60)} min.`, 'info');
-        $('liveText').textContent = state.dataStale ? 'DATI SALVATI · NON LIVE' : 'IN ATTESA DI DATI';
+        if (state.directAvio) {
+          const ageMs = state.lastUpdated ? Date.now() - state.lastUpdated.getTime() : Infinity;
+          state.dataStale = ageMs > 2 * 60 * 1000;
+          updateTimeLabel();
+          const updatedAt = state.lastUpdated ? state.lastUpdated.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : 'non disponibile';
+          setStatus(`${state.dataStale ? 'Ultimi dati AvioADSB salvati' : 'Dati AvioADSB ricevuti'} alle ${updatedAt}. Il piano gratuito anonimo permette 100 richieste al giorno per rete: prossimo tentativo tra circa ${Math.ceil(seconds / 60)} min.`, 'info');
+          $('liveText').textContent = state.dataStale ? 'DATI SALVATI · NON LIVE' : 'AVIOADSB · DATI RECENTI';
+        } else {
+          setStatus(`${friendlyUnavailableMessage()} Prossimo tentativo automatico tra circa ${Math.ceil(seconds / 60)} min.`, 'info');
+          $('liveText').textContent = state.dataStale ? 'DATI SALVATI · NON LIVE' : 'IN ATTESA DI DATI';
+        }
         return;
       }
 
@@ -363,51 +481,48 @@
       state.controller = new AbortController();
       const url = `${API_ENDPOINT}?lat=${encodeURIComponent(state.center.lat)}&lon=${encodeURIComponent(state.center.lon)}&dist=${encodeURIComponent(state.range)}`;
       let succeeded = false;
+      let directFailure = '';
       try {
-        const response = await fetch(url, { method: 'GET', cache: 'no-store', signal: state.controller.signal, headers: { 'Accept': 'application/json' } });
-        const contentType = response.headers.get('content-type') || '';
-        const responseText = await response.text();
         let data = null;
-        try { data = JSON.parse(responseText); } catch (_) { /* diagnosed below */ }
-        if (!data || typeof data !== 'object' || Array.isArray(data)) {
-          if (/<!doctype\s+html|<html[\s>]/i.test(responseText)) {
-            throw new Error('Il proxy non ha restituito JSON. Controlla il deployment Cloudflare e la rotta /api/aircraft.');
+        let usedDirectAvio = false;
+
+        // Online: prova prima una fonte gratuita direttamente dal browser del visitatore.
+        // In questo modo il provider vede la rete dell'utente, non l'IP egress di Cloudflare.
+        // In localhost si conserva esattamente il proxy locale già funzionante.
+        if (!isLocalHost()) {
+          const direct = await fetchAvioDirect();
+          if (direct.ok) {
+            data = direct.data;
+            usedDirectAvio = true;
+          } else {
+            directFailure = direct.reason || 'fallback AvioADSB non disponibile';
           }
-          throw new Error(`Risposta API non JSON (HTTP ${response.status}, ${contentType || 'tipo contenuto sconosciuto'}).`);
         }
-        if (!response.ok) throw new Error(data.detail || `Il proxy ADS-B ha risposto con HTTP ${response.status}.`);
-        const aircraftRows = Array.isArray(data.ac) ? data.ac : Array.isArray(data.aircraft) ? data.aircraft : null;
-        if (!aircraftRows) {
-          const fields = Object.keys(data).join(', ');
-          throw new Error(`Formato API non riconosciuto${fields ? ` (campi ricevuti: ${fields})` : ''}.`);
+
+        // Se la fonte diretta non è disponibile / è in pausa, ripiega sulle quattro fonti del proxy.
+        if (!data) {
+          const response = await fetch(url, { method: 'GET', cache: 'no-store', signal: state.controller.signal, headers: { 'Accept': 'application/json' } });
+          const contentType = response.headers.get('content-type') || '';
+          const responseText = await response.text();
+          let proxyData = null;
+          try { proxyData = JSON.parse(responseText); } catch (_) { /* diagnosi sotto */ }
+          if (!proxyData || typeof proxyData !== 'object' || Array.isArray(proxyData)) {
+            if (/<!doctype\s+html|<html[\s>]/i.test(responseText)) {
+              throw new Error('Il proxy non ha restituito JSON. Controlla il deployment Cloudflare e la rotta /api/aircraft.');
+            }
+            throw new Error(`Risposta API non JSON (HTTP ${response.status}, ${contentType || 'tipo contenuto sconosciuto'}).`);
+          }
+          if (!response.ok) throw new Error(proxyData.detail || `Il proxy ADS-B ha risposto con HTTP ${response.status}.`);
+          data = proxyData;
         }
-        const now = Date.now();
-        state.aircraft = aircraftRows
-          .filter(a => a && finite(numeric(a.lat)) && finite(numeric(a.lon)))
-          .map(a => {
-            const lat = Number(a.lat), lon = Number(a.lon);
-            return { ...a, lat, lon, distanceNm: haversineNm(state.center.lat, state.center.lon, lat, lon), bearing: bearingDegrees(state.center.lat, state.center.lon, lat, lon) };
-          })
-          .filter(a => a.distanceNm <= state.range && (numeric(a.seen_pos) === null || Number(a.seen_pos) <= 240))
-          .sort((a, b) => a.distanceNm - b.distanceNm);
-        state.lastUpdated = new Date(now);
-        state.lastError = null;
-        state.dataStale = false;
-        state.currentDataKey = queryKey;
-        state.consecutiveFailures = 0;
-        state.nextRetryAt = 0;
-        state.retryDelayMs = 120000;
+
+        applyAircraftData(data, queryKey, usedDirectAvio);
         succeeded = true;
-        if (!state.aircraft.some(a => String(a.hex) === String(state.selectedHex))) state.selectedHex = state.aircraft.length ? String(state.aircraft[0].hex) : null;
-        saveCachedData(queryKey);
-        updateCenterLabels();
-        renderAll();
-        const sourceLabel = data.skytraceSource ? ` Fonte: ${data.skytraceSource}.` : '';
-        setStatus(state.aircraft.length ? `Feed aggiornato: ${state.aircraft.length} velivoli con posizione recente entro ${state.range} NM.${sourceLabel}` : `Nessun velivolo con posizione recente trovato entro ${state.range} NM.${sourceLabel} Puoi aumentare il raggio o cambiare centro.`, state.aircraft.length ? 'good' : 'info');
       } catch (err) {
         if (err && err.name === 'AbortError') return;
-        // I dettagli rimangono nella console per la diagnosi, senza allarmare l'interfaccia ad ogni 403/429.
-        state.lastError = err instanceof Error ? err.message : 'Errore imprevisto durante il caricamento dei dati.';
+        // I dettagli rimangono nella console per la diagnosi, senza allarmare ad ogni 403/429.
+        const baseError = err instanceof Error ? err.message : 'Errore imprevisto durante il caricamento dei dati.';
+        state.lastError = directFailure ? `${baseError} · Fallback AvioADSB: ${directFailure}` : baseError;
         console.warn('[SKYTRACE] aggiornamento live fallito:', state.lastError);
         state.consecutiveFailures += 1;
         state.nextRetryAt = Date.now() + state.retryDelayMs;
@@ -420,8 +535,9 @@
       } finally {
         state.loading = false;
         $('refreshBtn').disabled = false;
-        if (succeeded) $('liveText').textContent = 'LIVE ADS-B';
-        else if (state.dataStale) $('liveText').textContent = 'DATI SALVATI · NON LIVE';
+        if (succeeded) {
+          $('liveText').textContent = state.directAvio ? 'AVIOADSB · DATI RECENTI' : 'LIVE ADS-B';
+        } else if (state.dataStale) $('liveText').textContent = 'DATI SALVATI · NON LIVE';
         else $('liveText').textContent = 'IN ATTESA DI DATI';
       }
     }
