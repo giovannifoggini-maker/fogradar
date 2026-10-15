@@ -62,7 +62,7 @@ def find_cloudflared() -> str | None:
     executable = shutil.which("cloudflared") or shutil.which("cloudflared.exe")
     if executable:
         return executable
-    for candidate in (ROOT / "cloudflared.exe", ROOT / "cloudflared"):
+    for candidate in (ROOT / "tools" / "cloudflared.exe", ROOT / "cloudflared.exe", ROOT / "cloudflared"):
         if candidate.is_file():
             return str(candidate)
     return None
@@ -81,11 +81,10 @@ def start_server():
 def main() -> int:
     cloudflared = find_cloudflared()
     if not cloudflared:
-        print("Non trovo cloudflared.")
-        print("Installa Cloudflare Tunnel seguendo la guida ufficiale:")
-        print("https://developers.cloudflare.com/tunnel/downloads/")
-        print("Su Windows puoi anche eseguire in PowerShell: winget install --id Cloudflare.cloudflared -e")
-        input("Dopo l'installazione, premi Invio e riavvia AVVIA_LIVE_TUNNEL.bat...")
+        print("Non trovo cloudflared nella cartella tools.")
+        print("Non installarlo a mano: chiudi questa finestra e avvia AVVIA_LIVE_TUNNEL.bat.")
+        print("Il launcher scarica e verifica il componente ufficiale dentro la cartella del progetto.")
+        input("Premi Invio per chiudere...")
         return 1
 
     try:

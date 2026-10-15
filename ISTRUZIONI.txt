@@ -1,131 +1,84 @@
-SKYTRACE — RADAR AEREO (fonti ADS-B pubbliche)
-================================================
+SKYTRACE — RADAR AEREO LIVE GRATUITO
+===================================
 
-Questa versione mantiene quattro fonti ADS-B pubbliche nel proxy:
-1. ADSB One
-2. Airplanes.live
-3. ADSB.lol
-4. ADSB.fi (endpoint v3 documentato)
+IMPORTANTE: non ci sono coordinate preimpostate. Alla prima apertura il radar e' vuoto,
+perche' devi scegliere tu il centro usando il GPS oppure inserendo le coordinate.
 
-In aggiunta, sul sito pubblicato (non su localhost) prova AvioADSB direttamente
-nel browser dell'utente quando non è disponibile una chiave diretta: questo evita
-che la richiesta gratuita parta dall'IP egress di Cloudflare, che alcuni provider
-possono limitare. AvioADSB non richiede una chiave per l'uso personale, ma il piano
-anonimo è limitato a 1 richiesta ogni 10 secondi, 100 richieste al giorno per rete
-e raggio massimo di 100 NM. Per non superare il limite, SKYTRACE aspetta circa
-15 minuti dopo un tentativo diretto. Nessun abbonamento o API key a pagamento è richiesto. In tal caso il radar non interrompe la pagina: conserva gli ultimi dati ricevuti
-per la stessa area (marcandoli come NON LIVE) e usa tentativi progressivamente
-più distanziati. Se non è mai arrivato un dato reale, mostra uno stato informativo.
-Non inventa posizioni o dati degli aeromobili.
+NESSUNA INSTALLAZIONE MANUALE
+-----------------------------
+Il pacchetto contiene il codice e gli script per predisporre gli strumenti portatili.
+Al primo avvio, se mancanti, AVVIA_LOCALHOST.bat scarica il runtime Python portatile
+ufficiale nella cartella tools del progetto. AVVIA_LIVE_TUNNEL.bat prepara anche
+cloudflared.exe nella stessa cartella. Non vengono installati programmi nel sistema
+Windows e non servono comandi da digitare. E' necessaria una connessione Internet
+solo per il primo scaricamento e per ricevere i dati live.
+I file scaricati vengono controllati con SHA-256 prima di essere eseguiti.
 
-1. TEST LOCALE (WINDOWS)
-- Estrai tutto lo ZIP mantenendo la struttura delle cartelle.
-- Installa Python 3, se necessario: https://www.python.org/downloads/
-- Fai doppio clic su AVVIA_LOCALHOST.bat.
-- Il server prova porte da 10000 a 10100 e apre il browser sulla prima libera.
-- Il proxy tenta ADSB One, poi Airplanes.live, ADSB.lol e infine ADSB.fi.
-- In localhost resta attivo il proxy Python e la logica originale delle quattro fonti.
-- Il fallback AvioADSB diretto è pensato per il sito pubblicato; in locale viene saltato.
-- Per fermare il server premi CTRL+C nella finestra del terminale.
+1. RADAR LOCALE
+--------------
+1. Estrai tutto lo ZIP in una cartella normale, non dentro l'anteprima dello ZIP.
+2. Fai doppio clic su AVVIA_LOCALHOST.bat.
+3. Al primo avvio attendi che scarichi il runtime portatile ufficiale; verra' salvato
+   in tools\python, dentro la cartella del progetto.
+4. Il browser si apre su localhost alla prima porta libera tra 10000 e 10100.
+5. Per fermare il server premi CTRL+C nella finestra del terminale.
 
-2. PUBBLICAZIONE SU GITHUB + CLOUDFLARE PAGES
-Carica alla radice del repository questi contenuti, mantenendo le cartelle:
-  public/index.html
-  public/_worker.js
-  AVVIA_LOCALHOST.bat
-  avvia_localhost.py
-  ISTRUZIONI.txt
-  .gitignore
+2. SCEGLI LA POSIZIONE (NESSUNA POSIZIONE PREIMPOSTATA)
+------------------------------------------------------
+- Premi “Usa la mia posizione” e consenti al browser di rilevare la posizione, oppure
+- scrivi latitudine e longitudine nei due campi vuoti e premi “Imposta coordinate”.
+- Il radar non invia richieste alle API e non mostra un centro geografico finche' non
+  scegli una posizione.
+- Dopo aver scelto il centro, il radar interroga le quattro fonti pubbliche in sequenza:
+  ADSB One, Airplanes.live, ADSB.lol e ADSB.fi.
+- Le fonti possono limitare o bloccare le richieste; il pacchetto mostra solo aerei reali
+  effettivamente ricevuti e non inventa bersagli.
 
-In Cloudflare Pages configura:
+3. RADAR LIVE ACCESSIBILE DA INTERNET (OPZIONALE)
+------------------------------------------------
+1. Estrai lo ZIP e fai doppio clic su AVVIA_LIVE_TUNNEL.bat.
+2. Al primo avvio il launcher scarica Python portatile e cloudflared nella cartella tools.
+   Non occorre aprire siti per scaricare componenti a mano e nulla viene installato
+   fuori dalla cartella del progetto.
+3. Il terminale mostra un indirizzo https://....trycloudflare.com, username “skytrace”
+   e una password generata. Il browser si aprira' sull'indirizzo del tunnel.
+4. Quando chiede le credenziali, usa lo username e la password visibili nel terminale.
+   Non condividere la password.
+5. Mantieni aperti il terminale e il PC. Il tunnel e' temporaneo e il suo indirizzo cambia
+   quando lo riavvii. Per interromperlo premi CTRL+C.
+
+NOTA: il tunnel usa lo stesso proxy Python del localhost, cosi' le richieste ADS-B partono
+   dalla connessione del tuo PC invece che dagli IP dei server Cloudflare Pages. Non elimina
+   eventuali blocchi del provider. Se tutte le fonti rifiutano la richiesta, SKYTRACE mostra
+   un avviso e non disegna aerei falsi. Per un collegamento live via tunnel, apri la URL
+   trycloudflare.com mostrata dal launcher; la versione statica pages.dev non puo' usare
+   il server del tuo PC quando e' spento.
+
+4. PUBBLICAZIONE STATICA GITHUB + CLOUDFLARE PAGES
+-------------------------------------------------
+La cartella public contiene la pagina e il Worker. Per un sito statico su Cloudflare Pages:
 - Root directory: vuoto
 - Framework preset: None
 - Build command: exit 0 (oppure vuoto)
 - Build output directory: public
-- Production branch: main
+- Branch: main
+Nota: il dominio pages.dev usa la propria infrastruttura per chiamare i provider e puo'
+ricevere 403/429 anche quando localhost funziona. Per condividere il feed del PC mentre
+resta acceso, usa l'URL Quick Tunnel della sezione 3.
 
-Salva le modifiche su GitHub e attendi che Cloudflare termini il nuovo deployment.
+SORGENTI E LICENZE
+------------------
+Python embeddable x64, versione 3.13.16 (download ufficiale):
+https://www.python.org/ftp/python/3.13.16/python-3.13.16-embeddable-amd64.zip
+SHA-256: 589dc1e9d02549ca5f680710307ff9b77f6e3ffc4aa3efccd7fa54eeeafac94b
 
-3. VERIFICA
-- Apri https://TUO-PROGETTO.pages.dev/api/health
-- Deve rispondere JSON con "ok": true e l'elenco dei quattro provider.
-- Apri https://TUO-PROGETTO.pages.dev/api/aircraft?lat=45.4642&lon=9.19&dist=50
-- Se una fonte risponde correttamente, la risposta conterrà il campo "ac".
-- Il Worker identifica l'app tramite User-Agent/Referer e usa una cache breve per limitare richieste duplicate.
-- Poi apri la home del radar.
+cloudflared Windows x64, versione 2026.10.0 (download ufficiale):
+https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/cloudflared-windows-amd64.exe
+SHA-256: 86aee4017b26625cee8484c113558f48effa4cd47f7aa05fcf425604e5d2b23c
 
-NOTE IMPORTANTI
-- Il proxy verifica i dati ogni 60 secondi, ma dopo errori applica un'attesa progressiva
-  fino a 10 minuti. Anche il proxy mette in pausa temporanea le fonti dopo 403/429.
-- Sul sito cloud, se il feed diretto AvioADSB funziona, l'app rispetta il suo piano anonimo
-  gratuito facendo un tentativo al massimo ogni 15 minuti; i dati possono quindi diventare
-  NON LIVE tra gli aggiornamenti. L'API anonima consente fino a 100 richieste/giorno per rete
-  e un raggio massimo di 100 NM, quindi seleziona 100 NM o meno per quel fallback.
-- AvioADSB richiede attribuzione: “Data: AvioADSB (CC BY 4.0)” con link a https://avioadsb.org/.
-  È un feed comunitario per uso personale/ricerca, non certificato per navigazione o sicurezza.
-- Gli ultimi dati riusciti vengono conservati nel browser per 24 ore e, durante un
-  disservizio, sono marcati chiaramente come NON LIVE. Se non esiste una lettura
-  precedente, la pagina mostra uno stato informativo e non inventa aerei.
-- Il proxy passa alla fonte successiva quando la precedente fallisce. Se tutte
-  restituiscono 403/429, non è un problema del disegno radar: l'accesso alle API
-  è rifiutato o limitato dall'infrastruttura/provider. Attendi e riprova più tardi.
-- ADSB.fi richiede attribuzione con link a https://adsb.fi/ ed è per uso personale,
-  non commerciale. I suoi endpoint pubblici sono limitati a 1 richiesta al secondo;
-  questa app controlla i voli con intervalli più lunghi. Termini ufficiali:
-  https://github.com/adsbfi/opendata/blob/main/README.md
-- AvioADSB documentazione ufficiale e limiti anonimi: https://avioadsb.org/docs/api
-- I dati possono avere ritardi, copertura incompleta o campi mancanti.
-- Questa app è solo informativa e non va usata per navigazione o decisioni di sicurezza.
+ADSB.fi richiede attribuzione con link a https://adsb.fi/ ed e' per uso personale/non commerciale:
+https://github.com/adsbfi/opendata/blob/main/README.md
+AvioADSB e' indicato nel codice per uso personale come fonte alternativa del sito statico:
+https://avioadsb.org/docs/api
 
-
-AGGIORNAMENTO POSIZIONE (versione corrente)
-- Il centro iniziale e i campi di coordinate sono sincronizzati su Torino (45.07030, 7.68690).
-- “Usa la mia posizione” richiede una posizione GPS fresca; consenti l'accesso quando richiesto dal browser.
-- Dopo l'acquisizione, l'etichetta sopra il radar mostra le coordinate attive.
-- Cambiando coordinate, GPS o raggio, la richiesta precedente viene annullata e parte subito una ricerca per il nuovo centro. Una risposta tardiva del centro precedente viene ignorata.
-- Premi Invio dopo aver scritto le coordinate oppure usa “Imposta coordinate”.
-
-DIAGNOSTICA CLOUDFARE (versione aggiornata)
-- Il Worker invia solo Accept: application/json, come il proxy locale per gli header espliciti; rimuove User-Agent e Referer personalizzati.
-- La cache API è stata versionata per non riutilizzare immediatamente risposte d'errore precedenti.
-- Dopo il deploy, apri https://TUO-PROGETTO.pages.dev/api/health e verifica requestHeaders = "Accept only; no custom User-Agent or Referer" e cacheVersion = 3.
-- Testa poi https://TUO-PROGETTO.pages.dev/api/aircraft?lat=45.0703&lon=7.6869&dist=50. Se ricevi JSON con il campo ac, l'API funziona; se torna ancora 403/429, il provider sta bloccando o limitando le richieste provenienti dall'infrastruttura cloud. In quel caso una modifica HTML/Worker non può garantire di replicare le richieste uscenti dal tuo PC: servirà un provider che autorizzi quelle richieste oppure un backend eseguito su un host consentito.
-
-
-FALLBACK GRATIS ONLINE
-- La pagina prova AvioADSB dal browser dell'utente prima del proxy Cloudflare, solo sul sito pubblicato.
-- Se il browser/provider impedisce la richiesta (CORS, 403 o rete), passa al proxy esistente.
-- Test manuale (Torino, 50 NM): https://avioadsb.org/v1/point/45.0703/7.6869/50
-- Se il test restituisce JSON ma la pagina riporta CORS, il provider non consente di leggere la risposta cross-origin: il browser mostrerà un messaggio di diagnostica e userà il proxy come ripiego.
-- Nessun dato aereo fittizio viene generato. Se anche AvioADSB e il proxy non rispondono, la pagina mostra l'indisponibilità.
-
-5. MODALITÀ LIVE GRATUITA ONLINE (USA LA STESSA FONTE DEL LOCALHOST)
-Se localhost funziona ma il sito pages.dev non riceve voli, alcuni feed pubblici
-possono rifiutare le richieste provenienti dagli IP dei server Cloudflare. Per
-usare online lo stesso proxy Python che funziona sul tuo PC, puoi creare un
-Cloudflare Quick Tunnel gratuito temporaneo:
-
-- Installa cloudflared dalle istruzioni ufficiali:
-  https://developers.cloudflare.com/tunnel/downloads/
-  Oppure apri PowerShell e lancia: winget install --id Cloudflare.cloudflared -e
-- Fai doppio clic su AVVIA_LIVE_TUNNEL.bat.
-- La finestra mostrerà una URL temporanea https://....trycloudflare.com e una
-  password generata per proteggere il proxy. Il browser si aprirà sulla URL.
-- Quando compare la richiesta di accesso del browser, usa username "skytrace"
-  e la password stampata nella stessa finestra del terminale.
-- Usa la URL trycloudflare.com come radar live. È servito dal tuo PC e usa il
-  medesimo proxy Python delle quattro fonti usato in localhost.
-- Mantieni aperta la finestra del terminale e il PC acceso. Chiudendo la finestra
-  il tunnel si interrompe. Ogni riavvio crea una nuova URL e una nuova password.
-
-SICUREZZA E LIMITI DEL TUNNEL
-- L'accesso HTTP Basic protegge i file e il proxy; non condividere la password.
-- Chiunque conosca URL e password può usare il tunnel mentre è attivo. Se sospetti
-  che siano stati condivisi, chiudi il processo e riavvia per generarne di nuovi.
-- La URL Quick Tunnel è temporanea e cambia al prossimo avvio. Cloudflare indica
-  Quick Tunnels per sviluppo/test, non per hosting di produzione stabile:
-  https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/
-- Il dominio pages.dev resta la versione statica pubblicata. Per dati live tramite
-  la rete del tuo PC, apri la URL trycloudflare.com mostrata dal launcher.
-- Il feed resta soggetto a copertura, limiti e disponibilità delle fonti pubbliche;
-  il tunnel non crea dati né garantisce voli in ogni area.
+Questo radar e' informativo e non va usato per navigazione o decisioni di sicurezza.

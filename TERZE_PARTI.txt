@@ -1,0 +1,14 @@
+COMPONENTI PORTATILI SCARICATI DAL LAUNCHER
+
+Python embeddable 3.13.16 x64
+Sorgente ufficiale: https://www.python.org/ftp/python/3.13.16/python-3.13.16-embeddable-amd64.zip
+SHA-256: 589dc1e9d02549ca5f680710307ff9b77f6e3ffc4aa3efccd7fa54eeeafac94b
+Licenza Python: https://docs.python.org/3/license.html
+
+cloudflared Windows x64 2026.10.0
+Sorgente ufficiale: https://github.com/cloudflare/cloudflared/releases/download/2026.10.0/cloudflared-windows-amd64.exe
+SHA-256: 86aee4017b26625cee8484c113558f48effa4cd47f7aa05fcf425604e5d2b23c
+Codice sorgente e licenza: https://github.com/cloudflare/cloudflared
+
+I componenti sono scaricati nella cartella tools del progetto e non vengono installati
+nel sistema operativo. Il launcher verifica i rispettivi hash SHA-256 prima dell'uso.
