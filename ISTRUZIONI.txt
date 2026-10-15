@@ -98,3 +98,34 @@ FALLBACK GRATIS ONLINE
 - Test manuale (Torino, 50 NM): https://avioadsb.org/v1/point/45.0703/7.6869/50
 - Se il test restituisce JSON ma la pagina riporta CORS, il provider non consente di leggere la risposta cross-origin: il browser mostrerà un messaggio di diagnostica e userà il proxy come ripiego.
 - Nessun dato aereo fittizio viene generato. Se anche AvioADSB e il proxy non rispondono, la pagina mostra l'indisponibilità.
+
+5. MODALITÀ LIVE GRATUITA ONLINE (USA LA STESSA FONTE DEL LOCALHOST)
+Se localhost funziona ma il sito pages.dev non riceve voli, alcuni feed pubblici
+possono rifiutare le richieste provenienti dagli IP dei server Cloudflare. Per
+usare online lo stesso proxy Python che funziona sul tuo PC, puoi creare un
+Cloudflare Quick Tunnel gratuito temporaneo:
+
+- Installa cloudflared dalle istruzioni ufficiali:
+  https://developers.cloudflare.com/tunnel/downloads/
+  Oppure apri PowerShell e lancia: winget install --id Cloudflare.cloudflared -e
+- Fai doppio clic su AVVIA_LIVE_TUNNEL.bat.
+- La finestra mostrerà una URL temporanea https://....trycloudflare.com e una
+  password generata per proteggere il proxy. Il browser si aprirà sulla URL.
+- Quando compare la richiesta di accesso del browser, usa username "skytrace"
+  e la password stampata nella stessa finestra del terminale.
+- Usa la URL trycloudflare.com come radar live. È servito dal tuo PC e usa il
+  medesimo proxy Python delle quattro fonti usato in localhost.
+- Mantieni aperta la finestra del terminale e il PC acceso. Chiudendo la finestra
+  il tunnel si interrompe. Ogni riavvio crea una nuova URL e una nuova password.
+
+SICUREZZA E LIMITI DEL TUNNEL
+- L'accesso HTTP Basic protegge i file e il proxy; non condividere la password.
+- Chiunque conosca URL e password può usare il tunnel mentre è attivo. Se sospetti
+  che siano stati condivisi, chiudi il processo e riavvia per generarne di nuovi.
+- La URL Quick Tunnel è temporanea e cambia al prossimo avvio. Cloudflare indica
+  Quick Tunnels per sviluppo/test, non per hosting di produzione stabile:
+  https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/
+- Il dominio pages.dev resta la versione statica pubblicata. Per dati live tramite
+  la rete del tuo PC, apri la URL trycloudflare.com mostrata dal launcher.
+- Il feed resta soggetto a copertura, limiti e disponibilità delle fonti pubbliche;
+  il tunnel non crea dati né garantisce voli in ogni area.

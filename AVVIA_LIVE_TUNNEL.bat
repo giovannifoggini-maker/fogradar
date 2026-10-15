@@ -3,13 +3,13 @@ setlocal
 cd /d "%~dp0"
 where py >nul 2>nul
 if %errorlevel%==0 (
-  py avvia_localhost.py
+  py avvia_live_tunnel.py
 ) else (
   where python >nul 2>nul
   if %errorlevel%==0 (
-    python avvia_localhost.py
+    python avvia_live_tunnel.py
   ) else (
-    echo Python non trovato. Installa Python 3 da https://www.python.org/downloads/ e riprova.
+    echo Python 3 non trovato. Installa Python da https://www.python.org/downloads/
     pause
   )
 )
